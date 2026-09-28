@@ -1,11 +1,11 @@
-import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/material.dart';
 import 'package:pronhub/models/category_item.dart';
 import 'package:pronhub/services/api.dart';
 import 'package:pronhub/services/data_cache.dart';
-import 'package:pronhub/widgets/skeleton.dart';
+import 'package:pronhub/views/video_view.dart';
 import 'package:pronhub/widgets/image_cache_key.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:pronhub/widgets/skeleton.dart';
 
 class CategoryPage extends StatefulWidget {
   const CategoryPage({super.key});
@@ -67,6 +67,7 @@ class _CategoryPageState extends State<CategoryPage> {
   }
 
   void _open(CategoryItem item) {
+    print(item.url);
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => _CategoryLinkPage(item: item)),
     );
@@ -93,6 +94,13 @@ class _CategoryPageState extends State<CategoryPage> {
                     selected: _uri.path == path,
                     onTap: () => _selectOrientation(path),
                   ),
+                const Spacer(),
+                const Divider(),
+                ListTile(
+                  dense: true,
+                  onTap: () => Navigator.pop(context),
+                  title: const Text('返回'),
+                ),
               ],
             ),
           ),
@@ -218,28 +226,12 @@ class _CategoryPageState extends State<CategoryPage> {
   }
 }
 
-class _CategoryLinkPage extends StatefulWidget {
+class _CategoryLinkPage extends StatelessWidget {
   const _CategoryLinkPage({required this.item});
   final CategoryItem item;
 
   @override
-  State<_CategoryLinkPage> createState() => _CategoryLinkPageState();
-}
-
-class _CategoryLinkPageState extends State<_CategoryLinkPage> {
-  late final WebViewController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..loadRequest(widget.item.url);
-  }
-
-  @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(widget.item.name)),
-    body: WebViewWidget(controller: _controller),
+    body: VideoView(path: item.path, category: item),
   );
 }

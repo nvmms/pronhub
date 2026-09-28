@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:pronhub/pages/home_page.dart';
+import 'package:pronhub/views/video_view.dart';
 
 ///
 /// /language/${language}
@@ -15,9 +15,10 @@ class LanguagePage extends StatefulWidget {
 class _LanguagePageState extends State<LanguagePage> {
   @override
   Widget build(BuildContext context) {
-    return HomePage(
-      title: widget.language == 'chinese' ? '中文视频' : widget.language,
-      path: '/language/${Uri.encodeComponent(widget.language)}',
+    return Scaffold(
+      body: VideoView(
+        path: '/language/${Uri.encodeComponent(widget.language)}',
+      ),
     );
   }
 }

@@ -6,12 +6,14 @@ class CategoryItem {
     required this.url,
     this.image,
     this.count = '',
+    required this.path,
   });
 
   final String name;
   final Uri url;
   final Uri? image;
   final String count;
+  final String path;
 
   factory CategoryItem.fromJson(Map<String, dynamic> json) => CategoryItem(
     name: json['name'] as String,
@@ -20,6 +22,7 @@ class CategoryItem {
         ? null
         : Uri.parse(json['image'] as String),
     count: json['count'] as String,
+    path: json['url'] as String,
   );
 
   Map<String, dynamic> toJson() => {
@@ -72,6 +75,7 @@ class CategorySection {
                   CategoryItem(
                     name: link.querySelector('strong')?.text.trim() ?? '',
                     url: baseUri.resolve(link.attributes['href']!),
+                    path: link.attributes['href']!,
                     image: switch (card
                         .querySelector('.relativeWrapper img')
                         ?.attributes['src']) {
