@@ -5,13 +5,12 @@ import 'package:pronhub/services/webview_loader.dart';
 
 abstract final class Api {
   static final homeUri = Uri.parse('https://cn.pornhub.com/');
+  static Uri pageUri(int page) => homeUri.resolve('/video?page=$page');
 
-  static Future<List<VideoItem>> homeVideos() async {
-    final html = await WebViewLoader.instance.load(homeUri);
-    final items = await Isolate.run(
-      () => VideoItem.listFromHtml(html, homeUri),
-    );
-    if (items.isEmpty) throw const FormatException('首页视频列表为空');
-    return items;
+  static Future<List<VideoItem>> videos(Uri uri) async {
+    final html = await WebViewLoader.instance.load(uri);
+    final videos = await Isolate.run(() => VideoItem.listFromHtml(html, uri));
+    if (videos.isEmpty) throw FormatException('视频列表为空：$uri');
+    return videos;
   }
 }

@@ -31,17 +31,13 @@ class VideoItem {
   }
 
   static VideoItem? fromElement(Element element, Uri baseUri) {
-    final link = element.querySelector('a.thumbnailTitle[href]');
+    final link = element.querySelector('.title a[href*="/view_video.php"]');
     final href = link?.attributes['href'];
     if (href == null || href.isEmpty) return null;
 
     final image = element.querySelector('img.js-videoThumb');
     final imageUrl = image?.attributes['src']?.trim();
-    final title = _text(
-      element.querySelector('a.thumbnailTitle')?.text ??
-          image?.attributes['alt'] ??
-          '',
-    );
+    final title = _text(link?.text ?? '');
     if (title.isEmpty) return null;
 
     return VideoItem(

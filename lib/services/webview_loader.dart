@@ -61,18 +61,18 @@ class WebViewLoader {
       while (DateTime.now().isBefore(deadline)) {
         if (!identical(_active, task) || task.result.isCompleted) return;
         final found = await _controller.runJavaScriptReturningResult(
-          "document.querySelector('ul#singleFeedSection li.pcVideoListItem') ? 'ready' : 'waiting'",
+          "document.querySelector('ul#videoCategory li.pcVideoListItem') ? 'ready' : 'waiting'",
         );
         if (_decode(found) == 'ready') {
           final html = await _controller.runJavaScriptReturningResult(
-            "document.querySelector('ul#singleFeedSection')?.outerHTML ?? ''",
+            "document.querySelector('ul#videoCategory')?.outerHTML ?? ''",
           );
           if (!task.result.isCompleted) task.result.complete(_decode(html));
           return;
         }
         await Future<void>.delayed(const Duration(milliseconds: 200));
       }
-      throw TimeoutException('等待 PC 端首页视频列表超时');
+      throw TimeoutException('等待 PC 端视频列表超时');
     } catch (error, stack) {
       if (!task.result.isCompleted) task.result.completeError(error, stack);
     }
