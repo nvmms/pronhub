@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:pronhub/models/video_item.dart';
+import 'package:pronhub/models/sort_option.dart';
 import 'package:pronhub/services/api.dart';
 import 'package:pronhub/widgets/thumbnail_image.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -16,6 +17,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final ScrollController _scrollController = ScrollController();
   List<VideoItem>? _videos;
+  SortOption _selectedSort = SortOption.all.first;
   int _nextPage = 2;
   bool _hasMore = true;
   Object? _error;
@@ -51,7 +53,7 @@ class _HomePageState extends State<HomePage> {
       _error = null;
     });
     try {
-      final videos = await Api.videos(Api.pageUri(1));
+      final videos = await Api.videos(Api.pageUri(1, path: _selectedSort.path));
       if (!mounted) return;
       setState(() {
         _videos = videos;
@@ -77,7 +79,7 @@ class _HomePageState extends State<HomePage> {
     if (!_hasMore || _loading || _loadingMore || _loadMoreFailed) {
       return;
     }
-    final uri = Api.pageUri(_nextPage);
+    final uri = Api.pageUri(_nextPage, path: _selectedSort.path);
     setState(() => _loadingMore = true);
     try {
       final videos = await Api.videos(uri);
@@ -110,6 +112,14 @@ class _HomePageState extends State<HomePage> {
     _loadMore();
   }
 
+  void _selectSort(SortOption option) {
+    if (_loading || _loadingMore || _selectedSort.value == option.value) {
+      return;
+    }
+    setState(() => _selectedSort = option);
+    _loadInitial();
+  }
+
   void _open(VideoItem item) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -121,7 +131,6 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
       body: _videos == null && _loading
           ? const Center(child: CircularProgressIndicator())
           : _videos == null
@@ -134,92 +143,120 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             )
-          : Column(
+          : Row(
               children: [
-                if (_loading) const LinearProgressIndicator(),
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: _loadInitial,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        const spacing = 12.0;
-                        final columns = (constraints.maxWidth / 220)
-                            .floor()
-                            .clamp(2, 8);
-                        final cardWidth =
-                            (constraints.maxWidth - spacing * (columns + 1)) /
-                            columns;
-                        return GridView.builder(
-                          key: ValueKey(_listVersion),
-                          controller: _scrollController,
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.all(spacing),
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: columns,
-                                crossAxisSpacing: spacing,
-                                mainAxisSpacing: spacing,
-                                mainAxisExtent: cardWidth * 9 / 16 + 98,
-                              ),
-                          itemCount: _videos!.length,
-                          itemBuilder: (context, index) {
-                            final item = _videos![index];
-                            return InkWell(
-                              onTap: () => _open(item),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  AspectRatio(
-                                    aspectRatio: 16 / 9,
-                                    child: ThumbnailImage(
-                                      url: item.thumbnail,
-                                      videoId: item.id,
-                                      referer: Api.homeUri,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    item.title,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  if (item.uploader.isNotEmpty)
-                                    Text(
-                                      item.uploader,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
-                                    ),
-                                  Text(
-                                    [item.duration, item.views]
-                                        .where((value) => value.isNotEmpty)
-                                        .join(' · '),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
+                SizedBox(
+                  width: 160,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final option in SortOption.all)
+                        ListTile(
+                          dense: true,
+                          title: Text(option.label),
+                          selected: _selectedSort.value == option.value,
+                          onTap: () => _selectSort(option),
+                        ),
+                      Spacer(),
+                      ListTile(onTap: () {}, title: Text("所有分类")),
+                    ],
                   ),
                 ),
-                if (_loadingMore) const LinearProgressIndicator(),
-                if (_loadMoreFailed)
-                  SafeArea(
-                    top: false,
-                    child: TextButton(
-                      onPressed: _retryLoadMore,
-                      child: const Text('下一页加载失败，点击重试'),
-                    ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      if (_loading) const LinearProgressIndicator(),
+                      Expanded(
+                        child: RefreshIndicator(
+                          onRefresh: _loadInitial,
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              const spacing = 12.0;
+                              final columns = (constraints.maxWidth / 220)
+                                  .floor()
+                                  .clamp(2, 8);
+                              final cardWidth =
+                                  (constraints.maxWidth -
+                                      spacing * (columns + 1)) /
+                                  columns;
+                              return GridView.builder(
+                                key: ValueKey(_listVersion),
+                                controller: _scrollController,
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: const EdgeInsets.all(spacing),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: columns,
+                                      crossAxisSpacing: spacing,
+                                      mainAxisSpacing: spacing,
+                                      mainAxisExtent: cardWidth * 9 / 16 + 98,
+                                    ),
+                                itemCount: _videos!.length,
+                                itemBuilder: (context, index) {
+                                  final item = _videos![index];
+                                  return InkWell(
+                                    onTap: () => _open(item),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        AspectRatio(
+                                          aspectRatio: 16 / 9,
+                                          child: ThumbnailImage(
+                                            url: item.thumbnail,
+                                            videoId: item.id,
+                                            referer: Api.homeUri,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          item.title,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        if (item.uploader.isNotEmpty)
+                                          Text(
+                                            item.uploader,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.bodySmall,
+                                          ),
+                                        Text(
+                                          [item.duration, item.views]
+                                              .where(
+                                                (value) => value.isNotEmpty,
+                                              )
+                                              .join(' · '),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall,
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      if (_loadingMore) const LinearProgressIndicator(),
+                      if (_loadMoreFailed)
+                        SafeArea(
+                          top: false,
+                          child: TextButton(
+                            onPressed: _retryLoadMore,
+                            child: const Text('下一页加载失败，点击重试'),
+                          ),
+                        ),
+                    ],
                   ),
+                ),
               ],
             ),
     );
