@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pronhub/models/video_item.dart';
 import 'package:pronhub/models/sort_option.dart';
 import 'package:pronhub/services/api.dart';
+import 'package:pronhub/pages/category_page.dart';
 import 'package:pronhub/widgets/thumbnail_image.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -159,7 +160,14 @@ class _HomePageState extends State<HomePage> {
                           onTap: () => _selectSort(option),
                         ),
                       Spacer(),
-                      ListTile(onTap: () {}, title: Text("所有分类")),
+                      ListTile(
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const CategoryPage(),
+                          ),
+                        ),
+                        title: const Text('所有分类'),
+                      ),
                     ],
                   ),
                 ),

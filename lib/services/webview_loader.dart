@@ -28,15 +28,16 @@ class WebViewLoader {
 
   Future<String> load(
     Uri uri, {
+    String selector = 'ul#videoCategory',
     Duration timeout = const Duration(seconds: 30),
   }) {
-    final result = _queue.then((_) => _load(uri, timeout));
+    final result = _queue.then((_) => _load(uri, selector, timeout));
     _queue = result.then<void>((_) {}, onError: (_, _) {});
     return result;
   }
 
-  Future<String> _load(Uri uri, Duration timeout) async {
-    final task = _LoadTask();
+  Future<String> _load(Uri uri, String selector, Duration timeout) async {
+    final task = _LoadTask(selector);
     _active = task;
     try {
       await _controller.setUserAgent(_desktopUserAgent);
@@ -61,11 +62,11 @@ class WebViewLoader {
       while (DateTime.now().isBefore(deadline)) {
         if (!identical(_active, task) || task.result.isCompleted) return;
         final found = await _controller.runJavaScriptReturningResult(
-          "document.querySelector('ul#videoCategory li.pcVideoListItem') ? 'ready' : 'waiting'",
+          "document.querySelector(${jsonEncode(task.selector == 'ul#videoCategory' ? 'ul#videoCategory li.pcVideoListItem' : task.selector)}) ? 'ready' : 'waiting'",
         );
         if (_decode(found) == 'ready') {
           final html = await _controller.runJavaScriptReturningResult(
-            "document.querySelector('ul#videoCategory')?.outerHTML ?? ''",
+            "document.querySelector(${jsonEncode(task.selector)})?.outerHTML ?? ''",
           );
           if (!task.result.isCompleted) task.result.complete(_decode(html));
           return;
@@ -101,6 +102,9 @@ class WebViewLoader {
 }
 
 class _LoadTask {
+  _LoadTask(this.selector);
+
+  final String selector;
   final result = Completer<String>();
   bool extracting = false;
 }
