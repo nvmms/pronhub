@@ -5,6 +5,7 @@ import 'package:pronhub/pages/language_page.dart';
 import 'package:pronhub/services/api.dart';
 import 'package:pronhub/pages/category_page.dart';
 import 'package:pronhub/widgets/thumbnail_image.dart';
+import 'package:pronhub/widgets/skeleton.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 class HomePage extends StatefulWidget {
@@ -123,7 +124,11 @@ class _HomePageState extends State<HomePage> {
     if (_loading || _loadingMore || _selectedSort.value == option.value) {
       return;
     }
-    setState(() => _selectedSort = option);
+    setState(() {
+      _selectedSort = option;
+      _videos = null;
+      _error = null;
+    });
     _loadInitial();
   }
 
@@ -138,19 +143,7 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _videos == null && _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _videos == null
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(_error?.toString() ?? '暂无视频'),
-                  TextButton(onPressed: _loadInitial, child: const Text('重试')),
-                ],
-              ),
-            )
-          : Row(
+      body: Row(
               children: [
                 if (widget.path == null)
                   SizedBox(
@@ -191,7 +184,22 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                 Expanded(
-                  child: Column(
+                  child: _videos == null && _loading
+                      ? const VideoSkeletonGrid()
+                      : _videos == null
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(_error?.toString() ?? '暂无视频'),
+                              TextButton(
+                                onPressed: _loadInitial,
+                                child: const Text('重试'),
+                              ),
+                            ],
+                          ),
+                        )
+                      : Column(
                     children: [
                       if (_loading) const LinearProgressIndicator(),
                       Expanded(

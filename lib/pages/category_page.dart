@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:pronhub/models/category_item.dart';
 import 'package:pronhub/services/api.dart';
+import 'package:pronhub/widgets/skeleton.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 class CategoryPage extends StatefulWidget {
@@ -90,20 +91,20 @@ class _CategoryPageState extends State<CategoryPage> {
                 if (_loading) const LinearProgressIndicator(),
                 Expanded(
                   child: _sections == null
-                      ? Center(
-                          child: _error == null
-                              ? const CircularProgressIndicator()
-                              : Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text('加载分类失败：$_error'),
-                                    TextButton(
-                                      onPressed: _load,
-                                      child: const Text('重试'),
-                                    ),
-                                  ],
-                                ),
-                        )
+                      ? _error == null
+                          ? const CategorySkeletonGrid()
+                          : Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('加载分类失败：$_error'),
+                                  TextButton(
+                                    onPressed: _load,
+                                    child: const Text('重试'),
+                                  ),
+                                ],
+                              ),
+                            )
                       : LayoutBuilder(
                           builder: (context, constraints) {
                             final columns = (constraints.maxWidth / 180)
