@@ -23,22 +23,20 @@ class VideoItem {
   static List<VideoItem> listFromHtml(String html, Uri baseUri) {
     final fragment = html_parser.parseFragment(html);
     return [
-      for (final element in fragment.querySelectorAll('li[data-video-id]'))
+      for (final element in fragment.querySelectorAll(
+        'li.pcVideoListItem[data-video-id]',
+      ))
         ?fromElement(element, baseUri),
     ];
   }
 
   static VideoItem? fromElement(Element element, Uri baseUri) {
-    final link =
-        element.querySelector('a.thumbnailTitle[href]') ??
-        element.querySelector('a.imageLink[href]');
+    final link = element.querySelector('a.thumbnailTitle[href]');
     final href = link?.attributes['href'];
     if (href == null || href.isEmpty) return null;
 
-    final image = element.querySelector(
-      'img.videoThumb, img.js-videoThumb, img.thumb',
-    );
-    final imageUrl = image?.attributes['data-path']?.trim();
+    final image = element.querySelector('img.js-videoThumb');
+    final imageUrl = image?.attributes['src']?.trim();
     final title = _text(
       element.querySelector('a.thumbnailTitle')?.text ??
           image?.attributes['alt'] ??
@@ -53,9 +51,13 @@ class VideoItem {
       thumbnail: imageUrl == null || imageUrl.isEmpty
           ? null
           : baseUri.resolve(imageUrl),
-      duration: _text(element.querySelector('.duration .time')?.text ?? ''),
-      views: _text(element.querySelector('.videoViews')?.text ?? ''),
-      uploader: _text(element.querySelector('.uploaderLink')?.text ?? ''),
+      duration: _text(
+        element.querySelector('.marker-overlays .duration')?.text ?? '',
+      ),
+      views: _text(
+        element.querySelector('.videoDetailBlock .views')?.text ?? '',
+      ),
+      uploader: _text(element.querySelector('.usernameWrap a')?.text ?? ''),
     );
   }
 

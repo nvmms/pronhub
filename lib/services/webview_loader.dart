@@ -5,6 +5,11 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 /// Serializes page loads through one JavaScript-enabled WebView.
 class WebViewLoader {
+  static const _desktopUserAgent =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+      'AppleWebKit/537.36 (KHTML, like Gecko) '
+      'Chrome/154.0.0.0 Safari/537.36';
+
   WebViewLoader._() {
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -34,6 +39,7 @@ class WebViewLoader {
     final task = _LoadTask();
     _active = task;
     try {
+      await _controller.setUserAgent(_desktopUserAgent);
       await _controller.loadRequest(uri);
       return await task.result.future.timeout(timeout);
     } on TimeoutException {
@@ -55,18 +61,18 @@ class WebViewLoader {
       while (DateTime.now().isBefore(deadline)) {
         if (!identical(_active, task) || task.result.isCompleted) return;
         final found = await _controller.runJavaScriptReturningResult(
-          "document.querySelector('ul.videoList.latestThumbDesign li[data-video-id]') ? 'ready' : 'waiting'",
+          "document.querySelector('ul#singleFeedSection li.pcVideoListItem') ? 'ready' : 'waiting'",
         );
         if (_decode(found) == 'ready') {
           final html = await _controller.runJavaScriptReturningResult(
-            "document.querySelector('ul.videoList.latestThumbDesign')?.outerHTML ?? ''",
+            "document.querySelector('ul#singleFeedSection')?.outerHTML ?? ''",
           );
           if (!task.result.isCompleted) task.result.complete(_decode(html));
           return;
         }
         await Future<void>.delayed(const Duration(milliseconds: 200));
       }
-      throw TimeoutException('等待首页视频列表超时');
+      throw TimeoutException('等待 PC 端首页视频列表超时');
     } catch (error, stack) {
       if (!task.result.isCompleted) task.result.completeError(error, stack);
     }
