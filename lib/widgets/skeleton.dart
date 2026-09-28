@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
 class SkeletonBox extends StatelessWidget {
-  const SkeletonBox({super.key, this.width, this.height});
+  const SkeletonBox({super.key, this.width, this.height, this.radius = 6});
 
   final double? width;
   final double? height;
+  final double radius;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -12,7 +13,7 @@ class SkeletonBox extends StatelessWidget {
     height: height,
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.10),
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(radius),
     ),
   );
 }
@@ -24,21 +25,21 @@ class VideoSkeletonGrid extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       const spacing = 12.0;
-      final columns = (constraints.maxWidth / 220).floor().clamp(2, 8);
+      final columns = (constraints.maxWidth / 250).floor().clamp(1, 6);
       final cardWidth = (constraints.maxWidth - spacing * (columns + 1)) / columns;
       return GridView.builder(
-        padding: const EdgeInsets.all(spacing),
+        padding: const EdgeInsets.all(16),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: columns,
           crossAxisSpacing: spacing,
           mainAxisSpacing: spacing,
-          mainAxisExtent: cardWidth * 9 / 16 + 98,
+          mainAxisExtent: cardWidth * 9 / 16 + 96,
         ),
         itemCount: columns * 3,
         itemBuilder: (context, index) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AspectRatio(aspectRatio: 16 / 9, child: SkeletonBox()),
+            AspectRatio(aspectRatio: 16 / 9, child: SkeletonBox(radius: 0)),
             const SizedBox(height: 8),
             const SkeletonBox(height: 14),
             const SizedBox(height: 8),
@@ -58,7 +59,7 @@ class CategorySkeletonGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final columns = (constraints.maxWidth / 180).floor().clamp(2, 6);
+      final columns = (constraints.maxWidth / 190).floor().clamp(1, 6);
       return GridView.builder(
         padding: const EdgeInsets.all(12),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(

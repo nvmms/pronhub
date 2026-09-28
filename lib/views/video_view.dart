@@ -8,6 +8,7 @@ import 'package:pronhub/services/data_cache.dart';
 import 'package:pronhub/pages/category_page.dart';
 import 'package:pronhub/widgets/thumbnail_image.dart';
 import 'package:pronhub/widgets/skeleton.dart';
+import 'package:pronhub/widgets/browse_layout.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 class VideoView extends StatefulWidget {
@@ -185,165 +186,200 @@ class _VideoViewState extends State<VideoView> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 120,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.start,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (widget.category != null) Text(widget.category!.name),
-              for (final option in SortOption.all)
-                ListTile(
-                  dense: true,
-                  title: Text(option.label),
-                  selected: _selectedSort.value == option.value,
-                  onTap: () => _selectSort(option),
-                ),
-              if (widget.path == null || widget.path == "/video") ...[
-                const Spacer(),
-                const Divider(),
-                ListTile(
-                  dense: true,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const LanguagePage(language: "chinese"),
-                    ),
-                  ),
-                  title: const Text('中文视频'),
-                ),
-                ListTile(
-                  dense: true,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const CategoryPage(),
-                    ),
-                  ),
-                  title: const Text('所有分类'),
-                ),
-              ],
-              // Text("${widget.path}"),
-              if (widget.path != "/video") ...[
-                const Spacer(),
-                const Divider(),
-                ListTile(
-                  dense: true,
-                  onTap: () => Navigator.pop(context),
-                  title: const Text('返回'),
-                ),
-              ],
-            ],
+    return BrowseLayout(
+      title:
+          widget.category?.name ?? (widget.path == '/video' ? '视频精选' : '视频列表'),
+      actions: [
+        for (final option in SortOption.all)
+          BrowseAction(
+            option.label,
+            Icons.sort_rounded,
+            () => _selectSort(option),
+            selected: _selectedSort.value == option.value,
           ),
-        ),
-        Expanded(
-          child: _videos == null && _loading
-              ? const VideoSkeletonGrid()
-              : _videos == null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(_error?.toString() ?? '暂无视频'),
-                      TextButton(
-                        onPressed: _loadInitial,
-                        child: const Text('重试'),
-                      ),
-                    ],
-                  ),
-                )
-              : Column(
-                  children: [
-                    if (_loading) const LinearProgressIndicator(),
-                    Expanded(
-                      child: RefreshIndicator(
-                        onRefresh: _loadInitial,
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            const spacing = 12.0;
-                            final columns = (constraints.maxWidth / 220)
-                                .floor()
-                                .clamp(2, 8);
-                            final cardWidth =
-                                (constraints.maxWidth -
-                                    spacing * (columns + 1)) /
-                                columns;
-                            return GridView.builder(
-                              key: ValueKey(_listVersion),
-                              controller: _scrollController,
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              padding: const EdgeInsets.all(spacing),
-                              gridDelegate:
-                                  SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: columns,
-                                    crossAxisSpacing: spacing,
-                                    mainAxisSpacing: spacing,
-                                    mainAxisExtent: cardWidth * 9 / 16 + 98,
-                                  ),
-                              itemCount: _videos!.length,
-                              itemBuilder: (context, index) {
-                                final item = _videos![index];
-                                return InkWell(
-                                  onTap: () => _open(item),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      AspectRatio(
-                                        aspectRatio: 16 / 9,
-                                        child: ThumbnailImage(
+      ],
+      bottomActions: [
+        if (widget.path == null || widget.path == '/video') ...[
+          BrowseAction(
+            '中文视频',
+            Icons.language_rounded,
+            () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const LanguagePage(language: 'chinese'),
+              ),
+            ),
+          ),
+          BrowseAction(
+            '所有分类',
+            Icons.grid_view_rounded,
+            () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const CategoryPage()),
+            ),
+          ),
+        ],
+        if (widget.path != '/video')
+          BrowseAction(
+            '返回',
+            Icons.arrow_back_rounded,
+            () => Navigator.pop(context),
+          ),
+      ],
+      child: _videos == null && _loading
+          ? const VideoSkeletonGrid()
+          : _videos == null
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_error?.toString() ?? '暂无视频'),
+                  TextButton(onPressed: _loadInitial, child: const Text('重试')),
+                ],
+              ),
+            )
+          : Column(
+              children: [
+                if (_loading) const LinearProgressIndicator(),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: _loadInitial,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        const spacing = 12.0;
+                        final columns = (constraints.maxWidth / 250)
+                            .floor()
+                            .clamp(1, 6);
+                        final cardWidth =
+                            (constraints.maxWidth - spacing * (columns + 1)) /
+                            columns;
+                        return GridView.builder(
+                          key: ValueKey(_listVersion),
+                          controller: _scrollController,
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(16),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: columns,
+                                crossAxisSpacing: spacing,
+                                mainAxisSpacing: spacing,
+                                mainAxisExtent: cardWidth * 9 / 16 + 96,
+                              ),
+                          itemCount: _videos!.length,
+                          itemBuilder: (context, index) {
+                            final item = _videos![index];
+                            return InkWell(
+                              hoverColor: Colors.transparent,
+                              highlightColor: Colors.transparent,
+                              splashColor: Colors.transparent,
+                              onTap: () => _open(item),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  AspectRatio(
+                                    aspectRatio: 16 / 9,
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        ThumbnailImage(
                                           url: item.thumbnail,
                                           videoId: item.id,
                                           referer: Api.homeUri,
                                         ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        item.title,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      if (item.uploader.isNotEmpty)
-                                        Text(
-                                          item.uploader,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.bodySmall,
+                                        if (item.duration.isNotEmpty)
+                                          Positioned(
+                                            right: 8,
+                                            bottom: 8,
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 3,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black.withValues(
+                                                  alpha: 0.78,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                item.duration,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    item.title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Row(
+                                          children: [
+                                            if (item.uploader.isNotEmpty) ...[
+                                              Icon(
+                                                Icons.person_outline,
+                                                size: 15,
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                              ),
+                                              const SizedBox(width: 3),
+                                              Flexible(
+                                                child: Text(
+                                                  item.uploader,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.bodySmall,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
                                         ),
+                                      ),
+                                      const SizedBox(width: 8),
                                       Text(
-                                        [item.duration, item.views]
-                                            .where((value) => value.isNotEmpty)
-                                            .join(' · '),
+                                        item.views.isEmpty ? '—' : item.views,
                                         maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
                                         style: Theme.of(
                                           context,
                                         ).textTheme.bodySmall,
                                       ),
                                     ],
                                   ),
-                                );
-                              },
+                                ],
+                              ),
                             );
                           },
-                        ),
-                      ),
+                        );
+                      },
                     ),
-                    if (_loadingMore) const LinearProgressIndicator(),
-                    if (_loadMoreFailed)
-                      SafeArea(
-                        top: false,
-                        child: TextButton(
-                          onPressed: _retryLoadMore,
-                          child: const Text('下一页加载失败，点击重试'),
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
-        ),
-      ],
+                if (_loadingMore) const LinearProgressIndicator(),
+                if (_loadMoreFailed)
+                  SafeArea(
+                    top: false,
+                    child: TextButton(
+                      onPressed: _retryLoadMore,
+                      child: const Text('下一页加载失败，点击重试'),
+                    ),
+                  ),
+              ],
+            ),
     );
   }
 }

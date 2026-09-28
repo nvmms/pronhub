@@ -17,17 +17,18 @@ class ThumbnailImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     debugPrint('[thumbnail] id=$videoId url=${url ?? '(missing)'}');
-    if (url == null) return const ColoredBox(color: Colors.black12);
+    final placeholderColor = Theme.of(context).colorScheme.surfaceContainerHighest;
+    if (url == null) return ColoredBox(color: placeholderColor);
 
     return CachedNetworkImage(
       imageUrl: url.toString(),
       cacheKey: imageCacheKey(url!),
       httpHeaders: {'Referer': referer.toString()},
       fit: BoxFit.cover,
-      placeholder: (context, url) => const ColoredBox(color: Colors.black12),
+      placeholder: (context, url) => ColoredBox(color: placeholderColor),
       errorWidget: (context, url, error) {
         debugPrint('[thumbnail error] id=$videoId url=$url error=$error');
-        return const ColoredBox(color: Colors.black12);
+        return ColoredBox(color: placeholderColor);
       },
     );
   }

@@ -73,7 +73,12 @@ class VideoItem {
         element.querySelector('.marker-overlays .duration')?.text ?? '',
       ),
       views: _text(
-        element.querySelector('.videoDetailBlock .views')?.text ?? '',
+        element.querySelector('.videoDetailBlock .views')?.text ??
+            element.querySelector('.views')?.text ??
+            element.querySelector('.videoViews')?.text ??
+            element.querySelector('.video-views')?.text ??
+            element.attributes['data-views'] ??
+            '',
       ),
       uploader: _text(element.querySelector('.usernameWrap a')?.text ?? ''),
     );

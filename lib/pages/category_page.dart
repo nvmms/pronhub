@@ -6,6 +6,7 @@ import 'package:pronhub/services/data_cache.dart';
 import 'package:pronhub/views/video_view.dart';
 import 'package:pronhub/widgets/image_cache_key.dart';
 import 'package:pronhub/widgets/skeleton.dart';
+import 'package:pronhub/widgets/browse_layout.dart';
 
 class CategoryPage extends StatefulWidget {
   const CategoryPage({super.key});
@@ -67,7 +68,6 @@ class _CategoryPageState extends State<CategoryPage> {
   }
 
   void _open(CategoryItem item) {
-    print(item.url);
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => _CategoryLinkPage(item: item)),
     );
@@ -76,36 +76,21 @@ class _CategoryPageState extends State<CategoryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Row(
-        children: [
-          SizedBox(
-            width: 160,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final (label, path) in [
-                  ('异性恋', '/categories'),
-                  ('男同', '/gay/categories'),
-                  ('女女萨福系', '/lesbian/categories'),
-                ])
-                  ListTile(
-                    dense: true,
-                    title: Text(label),
-                    selected: _uri.path == path,
-                    onTap: () => _selectOrientation(path),
-                  ),
-                const Spacer(),
-                const Divider(),
-                ListTile(
-                  dense: true,
-                  onTap: () => Navigator.pop(context),
-                  title: const Text('返回'),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Column(
+      body: BrowseLayout(
+        title: '所有分类',
+        actions: [
+          for (final (label, path) in [
+            ('异性恋', '/categories'),
+            ('男同', '/gay/categories'),
+            ('女女萨福系', '/lesbian/categories'),
+          ])
+            BrowseAction(label, Icons.category_outlined,
+              () => _selectOrientation(path), selected: _uri.path == path),
+        ],
+        bottomActions: [
+          BrowseAction('返回', Icons.arrow_back_rounded, () => Navigator.pop(context)),
+        ],
+        child: Column(
               children: [
                 if (_loading) const LinearProgressIndicator(),
                 Expanded(
@@ -126,9 +111,9 @@ class _CategoryPageState extends State<CategoryPage> {
                               )
                       : LayoutBuilder(
                           builder: (context, constraints) {
-                            final columns = (constraints.maxWidth / 180)
+                            final columns = (constraints.maxWidth / 190)
                                 .floor()
-                                .clamp(2, 6);
+                                .clamp(1, 6);
                             return ListView(
                               children: [
                                 for (final section in _sections!)
@@ -160,6 +145,9 @@ class _CategoryPageState extends State<CategoryPage> {
                                       itemBuilder: (context, index) {
                                         final item = section.items[index];
                                         return InkWell(
+                                          hoverColor: Colors.transparent,
+                                          highlightColor: Colors.transparent,
+                                          splashColor: Colors.transparent,
                                           onTap: () => _open(item),
                                           child: Column(
                                             crossAxisAlignment:
@@ -167,8 +155,8 @@ class _CategoryPageState extends State<CategoryPage> {
                                             children: [
                                               Expanded(
                                                 child: item.image == null
-                                                    ? const ColoredBox(
-                                                        color: Colors.black12,
+                                                    ? ColoredBox(
+                                                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
                                                       )
                                                     : CachedNetworkImage(
                                                         imageUrl: item.image
@@ -182,30 +170,27 @@ class _CategoryPageState extends State<CategoryPage> {
                                                           'Referer': _uri
                                                               .toString(),
                                                         },
-                                                        placeholder: (_, _) =>
-                                                            const ColoredBox(
-                                                              color: Colors
-                                                                  .black12,
-                                                            ),
-                                                        errorWidget: (_, _, _) =>
-                                                            const ColoredBox(
-                                                              color: Colors
-                                                                  .black12,
-                                                            ),
+                                                        placeholder: (_, _) => ColoredBox(
+                                                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                                        ),
+                                                        errorWidget: (_, _, _) => ColoredBox(
+                                                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                                        ),
                                                       ),
                                               ),
-                                              Text(
-                                                item.name,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                              if (item.count.isNotEmpty)
-                                                Text(
-                                                  '${item.count} 视频',
-                                                  style: Theme.of(
-                                                    context,
-                                                  ).textTheme.bodySmall,
-                                                ),
+                                              const SizedBox(height: 6),
+                                              Row(children: [
+                                                Expanded(child: Text(
+                                                  item.name,
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                )),
+                                                if (item.count.isNotEmpty) ...[
+                                                  const SizedBox(width: 8),
+                                                  Text('${item.count} 视频',
+                                                    style: Theme.of(context).textTheme.bodySmall),
+                                                ],
+                                              ]),
                                             ],
                                           ),
                                         );
@@ -219,8 +204,6 @@ class _CategoryPageState extends State<CategoryPage> {
                 ),
               ],
             ),
-          ),
-        ],
       ),
     );
   }

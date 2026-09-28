@@ -37,7 +37,7 @@ class WebViewLoader {
   }
 
   Future<String> _load(Uri uri, String selector, Duration timeout) async {
-    final task = _LoadTask(selector);
+    final task = _LoadTask(uri, selector);
     _active = task;
     try {
       await _controller.setUserAgent(_desktopUserAgent);
@@ -53,9 +53,18 @@ class WebViewLoader {
     }
   }
 
-  Future<void> _onPageFinished(String _) async {
+  Future<void> _onPageFinished(String url) async {
     final task = _active;
     if (task == null || task.extracting || task.result.isCompleted) return;
+    final loadedUri = Uri.tryParse(url);
+    if (task.uri.path == '/video' &&
+        loadedUri?.path != '/video' &&
+        loadedUri?.path != '/video/') {
+      task.result.completeError(
+        FormatException('视频页面被重定向：${task.uri} → $url'),
+      );
+      return;
+    }
     task.extracting = true;
     try {
       final deadline = DateTime.now().add(const Duration(seconds: 15));
@@ -102,8 +111,9 @@ class WebViewLoader {
 }
 
 class _LoadTask {
-  _LoadTask(this.selector);
+  _LoadTask(this.uri, this.selector);
 
+  final Uri uri;
   final String selector;
   final result = Completer<String>();
   bool extracting = false;

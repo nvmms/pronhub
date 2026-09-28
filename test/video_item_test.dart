@@ -42,4 +42,26 @@ void main() {
     expect(items.single.views, '26.9K');
     expect(items.single.uploader, 'Creator');
   });
+
+  test('parses view counts outside the detail block', () {
+    const html = '''
+<li class="pcVideoListItem" data-video-id="1">
+  <span class="title"><a href="/view_video.php?viewkey=abc">Video</a></span>
+  <span class="views">12K</span>
+</li>
+''';
+    final items = VideoItem.listFromHtml(html, Api.pageUri(1));
+    expect(items.single.views, '12K');
+  });
+
+  test('parses alternate view count markup', () {
+    const html = '''
+<li class="pcVideoListItem" data-video-id="2">
+  <span class="title"><a href="/view_video.php?viewkey=def">Video</a></span>
+  <span class="videoViews">8.5K</span>
+</li>
+''';
+    final items = VideoItem.listFromHtml(html, Api.pageUri(1));
+    expect(items.single.views, '8.5K');
+  });
 }
