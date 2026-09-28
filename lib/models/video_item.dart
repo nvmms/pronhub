@@ -20,6 +20,28 @@ class VideoItem {
   final String views;
   final String uploader;
 
+  factory VideoItem.fromJson(Map<String, dynamic> json) => VideoItem(
+    id: json['id'] as String,
+    title: json['title'] as String,
+    url: Uri.parse(json['url'] as String),
+    thumbnail: (json['thumbnail'] as String?) == null
+        ? null
+        : Uri.parse(json['thumbnail'] as String),
+    duration: json['duration'] as String,
+    views: json['views'] as String,
+    uploader: json['uploader'] as String,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'url': url.toString(),
+    'thumbnail': thumbnail?.toString(),
+    'duration': duration,
+    'views': views,
+    'uploader': uploader,
+  };
+
   static List<VideoItem> listFromHtml(String html, Uri baseUri) {
     final fragment = html_parser.parseFragment(html);
     return [

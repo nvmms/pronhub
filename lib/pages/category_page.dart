@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:pronhub/models/category_item.dart';
 import 'package:pronhub/services/api.dart';
+import 'package:pronhub/services/data_cache.dart';
 import 'package:pronhub/widgets/skeleton.dart';
+import 'package:pronhub/widgets/image_cache_key.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 class CategoryPage extends StatefulWidget {
@@ -26,14 +29,22 @@ class _CategoryPageState extends State<CategoryPage> {
 
   Future<void> _load() async {
     final version = ++_loadVersion;
+    final uri = _uri;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final sections = await Api.categories(_uri);
+      if (_sections == null) {
+        final cached = await DataCache.categories(uri);
+        if (mounted && version == _loadVersion && cached != null) {
+          setState(() => _sections = cached);
+        }
+      }
+      final sections = await Api.categories(uri);
       if (mounted && version == _loadVersion) {
         setState(() => _sections = sections);
+        await DataCache.saveCategories(uri, sections);
       }
     } catch (error) {
       if (mounted && version == _loadVersion) {
@@ -92,19 +103,19 @@ class _CategoryPageState extends State<CategoryPage> {
                 Expanded(
                   child: _sections == null
                       ? _error == null
-                          ? const CategorySkeletonGrid()
-                          : Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text('加载分类失败：$_error'),
-                                  TextButton(
-                                    onPressed: _load,
-                                    child: const Text('重试'),
-                                  ),
-                                ],
-                              ),
-                            )
+                            ? const CategorySkeletonGrid()
+                            : Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text('加载分类失败：$_error'),
+                                    TextButton(
+                                      onPressed: _load,
+                                      child: const Text('重试'),
+                                    ),
+                                  ],
+                                ),
+                              )
                       : LayoutBuilder(
                           builder: (context, constraints) {
                             final columns = (constraints.maxWidth / 180)
@@ -151,20 +162,28 @@ class _CategoryPageState extends State<CategoryPage> {
                                                     ? const ColoredBox(
                                                         color: Colors.black12,
                                                       )
-                                                    : Image.network(
-                                                        item.image.toString(),
+                                                    : CachedNetworkImage(
+                                                        imageUrl: item.image
+                                                            .toString(),
+                                                        cacheKey: imageCacheKey(
+                                                          item.image!,
+                                                        ),
                                                         fit: BoxFit.cover,
                                                         width: double.infinity,
-                                                        headers: {
+                                                        httpHeaders: {
                                                           'Referer': _uri
                                                               .toString(),
                                                         },
-                                                        errorBuilder:
-                                                            (_, _, _) =>
-                                                                const ColoredBox(
-                                                                  color: Colors
-                                                                      .black12,
-                                                                ),
+                                                        placeholder: (_, _) =>
+                                                            const ColoredBox(
+                                                              color: Colors
+                                                                  .black12,
+                                                            ),
+                                                        errorWidget: (_, _, _) =>
+                                                            const ColoredBox(
+                                                              color: Colors
+                                                                  .black12,
+                                                            ),
                                                       ),
                                               ),
                                               Text(

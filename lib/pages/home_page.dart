@@ -3,6 +3,7 @@ import 'package:pronhub/models/video_item.dart';
 import 'package:pronhub/models/sort_option.dart';
 import 'package:pronhub/pages/language_page.dart';
 import 'package:pronhub/services/api.dart';
+import 'package:pronhub/services/data_cache.dart';
 import 'package:pronhub/pages/category_page.dart';
 import 'package:pronhub/widgets/thumbnail_image.dart';
 import 'package:pronhub/widgets/skeleton.dart';
@@ -52,16 +53,22 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadInitial() async {
     if (_loading || _loadingMore) return;
+    final uri = widget.path == null
+        ? Api.pageUri(1, path: _selectedSort.path)
+        : Api.homeUri.resolve(widget.path!);
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final videos = await Api.videos(
-        widget.path == null
-            ? Api.pageUri(1, path: _selectedSort.path)
-            : Api.homeUri.resolve(widget.path!),
-      );
+      if (_videos == null) {
+        final cached = await DataCache.videos(uri);
+        if (!mounted) return;
+        if (cached != null && cached.isNotEmpty) {
+          setState(() => _videos = cached);
+        }
+      }
+      final videos = await Api.videos(uri);
       if (!mounted) return;
       setState(() {
         _videos = videos;
@@ -70,6 +77,7 @@ class _HomePageState extends State<HomePage> {
         _loadMoreFailed = false;
         _listVersion++;
       });
+      await DataCache.saveVideos(uri, videos);
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = error);
@@ -89,7 +97,20 @@ class _HomePageState extends State<HomePage> {
     }
     final uri = Api.pageUri(_nextPage, path: widget.path ?? _selectedSort.path);
     setState(() => _loadingMore = true);
+    var showedCachedPage = false;
+    var cachedNewVideos = false;
     try {
+      final cached = await DataCache.videos(uri);
+      if (!mounted) return;
+      if (cached != null && cached.isNotEmpty) {
+        final existingIds = _videos!.map((video) => video.id).toSet();
+        final cachedVideos = cached
+            .where((video) => existingIds.add(video.id))
+            .toList();
+        cachedNewVideos = cachedVideos.isNotEmpty;
+        setState(() => _videos = [..._videos!, ...cachedVideos]);
+        showedCachedPage = true;
+      }
       final videos = await Api.videos(uri);
       if (!mounted) return;
       final existingIds = _videos!.map((video) => video.id).toSet();
@@ -99,11 +120,18 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _videos = [..._videos!, ...newVideos];
         _nextPage++;
-        _hasMore = newVideos.isNotEmpty;
+        _hasMore = cachedNewVideos || newVideos.isNotEmpty;
       });
+      await DataCache.saveVideos(uri, videos);
     } catch (error) {
       if (!mounted) return;
-      setState(() => _loadMoreFailed = true);
+      setState(() {
+        if (showedCachedPage) {
+          _nextPage++;
+        } else {
+          _loadMoreFailed = true;
+        }
+      });
       debugPrint('[next page error] uri=$uri error=$error');
     } finally {
       if (mounted) {
@@ -144,62 +172,61 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Row(
-              children: [
-                if (widget.path == null)
-                  SizedBox(
-                    width: 160,
+        children: [
+          if (widget.path == null)
+            SizedBox(
+              width: 160,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final option in SortOption.all)
+                    ListTile(
+                      dense: true,
+                      title: Text(option.label),
+                      selected: _selectedSort.value == option.value,
+                      onTap: () => _selectSort(option),
+                    ),
+                  Spacer(),
+                  Divider(),
+                  ListTile(
+                    dense: true,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const LanguagePage(language: "chinese"),
+                      ),
+                    ),
+                    title: const Text('中文视频'),
+                  ),
+                  ListTile(
+                    dense: true,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const CategoryPage(),
+                      ),
+                    ),
+                    title: const Text('所有分类'),
+                  ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: _videos == null && _loading
+                ? const VideoSkeletonGrid()
+                : _videos == null
+                ? Center(
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        for (final option in SortOption.all)
-                          ListTile(
-                            dense: true,
-                            title: Text(option.label),
-                            selected: _selectedSort.value == option.value,
-                            onTap: () => _selectSort(option),
-                          ),
-                        Spacer(),
-                        Divider(),
-                        ListTile(
-                          dense: true,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  const LanguagePage(language: "chinese"),
-                            ),
-                          ),
-                          title: const Text('中文视频'),
-                        ),
-                        ListTile(
-                          dense: true,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const CategoryPage(),
-                            ),
-                          ),
-                          title: const Text('所有分类'),
+                        Text(_error?.toString() ?? '暂无视频'),
+                        TextButton(
+                          onPressed: _loadInitial,
+                          child: const Text('重试'),
                         ),
                       ],
                     ),
-                  ),
-                Expanded(
-                  child: _videos == null && _loading
-                      ? const VideoSkeletonGrid()
-                      : _videos == null
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(_error?.toString() ?? '暂无视频'),
-                              TextButton(
-                                onPressed: _loadInitial,
-                                child: const Text('重试'),
-                              ),
-                            ],
-                          ),
-                        )
-                      : Column(
+                  )
+                : Column(
                     children: [
                       if (_loading) const LinearProgressIndicator(),
                       Expanded(
@@ -291,9 +318,9 @@ class _HomePageState extends State<HomePage> {
                         ),
                     ],
                   ),
-                ),
-              ],
-            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:pronhub/widgets/image_cache_key.dart';
 
 class ThumbnailImage extends StatelessWidget {
   const ThumbnailImage({
@@ -17,11 +19,13 @@ class ThumbnailImage extends StatelessWidget {
     debugPrint('[thumbnail] id=$videoId url=${url ?? '(missing)'}');
     if (url == null) return const ColoredBox(color: Colors.black12);
 
-    return Image.network(
-      url.toString(),
-      headers: {'Referer': referer.toString()},
+    return CachedNetworkImage(
+      imageUrl: url.toString(),
+      cacheKey: imageCacheKey(url!),
+      httpHeaders: {'Referer': referer.toString()},
       fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) {
+      placeholder: (context, url) => const ColoredBox(color: Colors.black12),
+      errorWidget: (context, url, error) {
         debugPrint('[thumbnail error] id=$videoId url=$url error=$error');
         return const ColoredBox(color: Colors.black12);
       },

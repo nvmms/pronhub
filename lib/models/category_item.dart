@@ -12,6 +12,22 @@ class CategoryItem {
   final Uri url;
   final Uri? image;
   final String count;
+
+  factory CategoryItem.fromJson(Map<String, dynamic> json) => CategoryItem(
+    name: json['name'] as String,
+    url: Uri.parse(json['url'] as String),
+    image: (json['image'] as String?) == null
+        ? null
+        : Uri.parse(json['image'] as String),
+    count: json['count'] as String,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'url': url.toString(),
+    'image': image?.toString(),
+    'count': count,
+  };
 }
 
 class CategorySection {
@@ -19,6 +35,20 @@ class CategorySection {
 
   final String title;
   final List<CategoryItem> items;
+
+  factory CategorySection.fromJson(Map<String, dynamic> json) =>
+      CategorySection(
+        title: json['title'] as String,
+        items: [
+          for (final value in json['items'] as List<dynamic>)
+            CategoryItem.fromJson(value as Map<String, dynamic>),
+        ],
+      );
+
+  Map<String, dynamic> toJson() => {
+    'title': title,
+    'items': [for (final item in items) item.toJson()],
+  };
 
   static List<CategorySection> listFromHtml(String html, Uri baseUri) {
     final root = html_parser.parseFragment(html);
