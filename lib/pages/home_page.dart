@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:pronhub/models/video_item.dart';
 import 'package:pronhub/models/sort_option.dart';
+import 'package:pronhub/pages/language_page.dart';
 import 'package:pronhub/services/api.dart';
 import 'package:pronhub/pages/category_page.dart';
 import 'package:pronhub/widgets/thumbnail_image.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.title});
+  const HomePage({super.key, required this.title, this.path});
 
   final String title;
+  final String? path;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -54,7 +56,11 @@ class _HomePageState extends State<HomePage> {
       _error = null;
     });
     try {
-      final videos = await Api.videos(Api.pageUri(1, path: _selectedSort.path));
+      final videos = await Api.videos(
+        widget.path == null
+            ? Api.pageUri(1, path: _selectedSort.path)
+            : Api.homeUri.resolve(widget.path!),
+      );
       if (!mounted) return;
       setState(() {
         _videos = videos;
@@ -80,7 +86,7 @@ class _HomePageState extends State<HomePage> {
     if (!_hasMore || _loading || _loadingMore || _loadMoreFailed) {
       return;
     }
-    final uri = Api.pageUri(_nextPage, path: _selectedSort.path);
+    final uri = Api.pageUri(_nextPage, path: widget.path ?? _selectedSort.path);
     setState(() => _loadingMore = true);
     try {
       final videos = await Api.videos(uri);
@@ -146,31 +152,44 @@ class _HomePageState extends State<HomePage> {
             )
           : Row(
               children: [
-                SizedBox(
-                  width: 160,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (final option in SortOption.all)
+                if (widget.path == null)
+                  SizedBox(
+                    width: 160,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final option in SortOption.all)
+                          ListTile(
+                            dense: true,
+                            title: Text(option.label),
+                            selected: _selectedSort.value == option.value,
+                            onTap: () => _selectSort(option),
+                          ),
+                        Spacer(),
+                        Divider(),
                         ListTile(
                           dense: true,
-                          title: Text(option.label),
-                          selected: _selectedSort.value == option.value,
-                          onTap: () => _selectSort(option),
-                        ),
-                      Spacer(),
-                      ListTile(
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const CategoryPage(),
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  const LanguagePage(language: "chinese"),
+                            ),
                           ),
+                          title: const Text('中文视频'),
                         ),
-                        title: const Text('所有分类'),
-                      ),
-                    ],
+                        ListTile(
+                          dense: true,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const CategoryPage(),
+                            ),
+                          ),
+                          title: const Text('所有分类'),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
                 Expanded(
                   child: Column(
                     children: [
