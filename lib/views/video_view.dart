@@ -3,13 +3,13 @@ import 'package:pronhub/models/category_item.dart';
 import 'package:pronhub/models/video_item.dart';
 import 'package:pronhub/models/sort_option.dart';
 import 'package:pronhub/pages/language_page.dart';
+import 'package:pronhub/pages/video_detail_page.dart';
 import 'package:pronhub/services/api.dart';
 import 'package:pronhub/services/data_cache.dart';
 import 'package:pronhub/pages/category_page.dart';
 import 'package:pronhub/widgets/thumbnail_image.dart';
 import 'package:pronhub/widgets/skeleton.dart';
 import 'package:pronhub/widgets/browse_layout.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
 class VideoView extends StatefulWidget {
   const VideoView({super.key, this.path, this.category});
@@ -179,7 +179,7 @@ class _VideoViewState extends State<VideoView> {
   void _open(VideoItem item) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => _VideoPage(url: item.url, title: item.title),
+        builder: (_) => VideoDetailPage(video: item),
       ),
     );
   }
@@ -382,32 +382,4 @@ class _VideoViewState extends State<VideoView> {
             ),
     );
   }
-}
-
-class _VideoPage extends StatefulWidget {
-  const _VideoPage({required this.url, required this.title});
-
-  final Uri url;
-  final String title;
-
-  @override
-  State<_VideoPage> createState() => _VideoPageState();
-}
-
-class _VideoPageState extends State<_VideoPage> {
-  late final WebViewController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..loadRequest(widget.url);
-  }
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(widget.title)),
-    body: WebViewWidget(controller: _controller),
-  );
 }
