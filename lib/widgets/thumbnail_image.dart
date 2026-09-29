@@ -16,7 +16,6 @@ class ThumbnailImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('[thumbnail] id=$videoId url=${url ?? '(missing)'}');
     final placeholderColor = Theme.of(context).colorScheme.surfaceContainerHighest;
     if (url == null) return ColoredBox(color: placeholderColor);
 
