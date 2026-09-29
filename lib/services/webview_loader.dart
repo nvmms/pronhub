@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 /// Serializes page loads through one JavaScript-enabled WebView.
 class WebViewLoader {
-  static const _desktopUserAgent =
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+  static const _desktopUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
       'AppleWebKit/537.36 (KHTML, like Gecko) '
       'Chrome/154.0.0.0 Safari/537.36';
 
@@ -19,12 +19,18 @@ class WebViewLoader {
           onWebResourceError: _onError,
         ),
       );
+    _configureMediaPlayback = _controller.platform is AndroidWebViewController
+        ? (_controller.platform as AndroidWebViewController)
+            .setMediaPlaybackRequiresUserGesture(true)
+        : Future<void>.value();
   }
 
   static final instance = WebViewLoader._();
   late final WebViewController _controller;
+  late final Future<void> _configureMediaPlayback;
   Future<void> _queue = Future<void>.value();
   _LoadTask? _active;
+  Completer<void>? _blankPageFinished;
 
   Future<String> load(
     Uri uri, {
@@ -32,7 +38,7 @@ class WebViewLoader {
     Duration timeout = const Duration(seconds: 30),
   }) {
     final result = _queue.then((_) => _load(uri, selector, timeout));
-    _queue = result.then<void>((_) {}, onError: (_, _) {});
+    _queue = result.then<void>((_) {}, onError: (error, stack) {});
     return result;
   }
 
@@ -40,6 +46,7 @@ class WebViewLoader {
     final task = _LoadTask(uri, selector);
     _active = task;
     try {
+      await _configureMediaPlayback;
       await _controller.setUserAgent(_desktopUserAgent);
       await _controller.loadRequest(uri);
       return await task.result.future.timeout(timeout);
@@ -50,10 +57,28 @@ class WebViewLoader {
       throw TimeoutException('首页加载超时：$uri', timeout);
     } finally {
       if (identical(_active, task)) _active = null;
+      // The WebView only scrapes HTML. Unload the page so its video player
+      // cannot keep a decoder alive alongside the Flutter player.
+      final blankPageFinished = Completer<void>();
+      _blankPageFinished = blankPageFinished;
+      try {
+        await _controller.loadRequest(Uri.parse('about:blank'));
+        await blankPageFinished.future.timeout(const Duration(seconds: 3));
+      } catch (_) {}
+      if (identical(_blankPageFinished, blankPageFinished)) {
+        _blankPageFinished = null;
+      }
     }
   }
 
   Future<void> _onPageFinished(String url) async {
+    if (url == 'about:blank') {
+      final blankPageFinished = _blankPageFinished;
+      if (blankPageFinished != null && !blankPageFinished.isCompleted) {
+        blankPageFinished.complete();
+      }
+      return;
+    }
     final task = _active;
     if (task == null || task.extracting || task.result.isCompleted) return;
     final loadedUri = Uri.tryParse(url);
