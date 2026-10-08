@@ -3,6 +3,7 @@
     <application
         android:label="pronhub"
         android:name="${applicationName}"
+        android:banner="@drawable/tv_banner"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
