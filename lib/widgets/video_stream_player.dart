@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:pronhub/extensions/build_context_extensions.dart';
 import 'package:pronhub/services/orientation_policy.dart';
@@ -84,6 +85,41 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
   bool _refreshingSources = false;
   Duration _lastPosition = Duration.zero;
   bool _isFullscreen = false;
+  bool _systemFullscreen = false;
+  bool _fullscreenBeforeSystem = false;
+  bool _changingSystemFullscreen = false;
+  static const _windowChannel = MethodChannel('pronhub/window');
+
+  Future<void> _toggleSystemFullscreen() async {
+    if (_changingSystemFullscreen || !_ready) return;
+    _changingSystemFullscreen = true;
+    try {
+      final enabled = !_systemFullscreen;
+      final previousFullscreen = _isFullscreen;
+      await _windowChannel.invokeMethod<void>('setFullscreen', enabled);
+      if (!mounted || _disposing) return;
+      _changeControls(() => _systemFullscreen = enabled);
+      if (enabled) {
+        _fullscreenBeforeSystem = previousFullscreen;
+        showFullscreen();
+      } else if (!_fullscreenBeforeSystem) {
+        hideFullscreen();
+      }
+    } on PlatformException catch (error) {
+      debugPrint('System fullscreen: $error');
+    } on MissingPluginException catch (error) {
+      debugPrint('System fullscreen: $error');
+    } finally {
+      _changingSystemFullscreen = false;
+    }
+  }
+
+  void _exitSystemFullscreen() {
+    if (!_systemFullscreen) return;
+    _systemFullscreen = false;
+    unawaited(_windowChannel.invokeMethod<void>('setFullscreen', false));
+  }
+
   bool _disposing = false;
   OverlayEntry? _fullscreenOverlay;
   LocalHistoryEntry? _fullscreenHistory;
@@ -440,6 +476,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
   }
 
   void _removeFullscreenOverlay() {
+    _exitSystemFullscreen();
     final overlay = _fullscreenOverlay;
     if (overlay == null) return;
     overlay.remove();
@@ -451,6 +488,10 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
 
   void hideFullscreen() {
     if (_disposing || !_isFullscreen) return;
+    if (_systemFullscreen) {
+      unawaited(_toggleSystemFullscreen());
+      return;
+    }
     final history = _fullscreenHistory;
     _fullscreenHistory = null;
     if (history != null) {
@@ -484,11 +525,22 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
       builder: (context) => Positioned.fill(
         child: Navigator(
           onGenerateRoute: (_) => MaterialPageRoute<void>(
-            builder: (_) => Material(
-              color: Colors.black,
-              child: ValueListenableBuilder<int>(
-                valueListenable: _fullscreenRevision,
-                builder: (_, _, _) => _fullscreenContent(),
+            builder: (_) => Focus(
+              autofocus: true,
+              onKeyEvent: (_, event) {
+                if (event is KeyDownEvent &&
+                    event.logicalKey == LogicalKeyboardKey.escape) {
+                  hideFullscreen();
+                  return KeyEventResult.handled;
+                }
+                return KeyEventResult.ignored;
+              },
+              child: Material(
+                color: Colors.black,
+                child: ValueListenableBuilder<int>(
+                  valueListenable: _fullscreenRevision,
+                  builder: (_, _, _) => _fullscreenContent(),
+                ),
               ),
             ),
           ),
@@ -836,6 +888,45 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
                             ),
                           ] else ...[
                             Text(_time(value.duration)),
+                          ],
+                          if (!context.isPhone) ...[
+                            if (!_systemFullscreen)
+                              IconButton(
+                                mouseCursor: SystemMouseCursors.click,
+                                color: Colors.white,
+                                tooltip: fullscreen ? '退出界面全屏' : '界面内全屏',
+                                icon: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    const Icon(Icons.crop_16_9),
+                                    if (fullscreen)
+                                      const Icon(
+                                        Icons.close_fullscreen,
+                                        size: 12,
+                                      ),
+                                  ],
+                                ),
+                                onPressed: fullscreen
+                                    ? onFullscreenPressed
+                                    : showFullscreen,
+                              ),
+                            if (defaultTargetPlatform ==
+                                    TargetPlatform.windows ||
+                                defaultTargetPlatform == TargetPlatform.macOS)
+                              IconButton(
+                                mouseCursor: SystemMouseCursors.click,
+                                color: Colors.white,
+                                tooltip: _systemFullscreen
+                                    ? '退出系统全屏'
+                                    : '桌面系统全屏',
+                                icon: Icon(
+                                  _systemFullscreen
+                                      ? Icons.fullscreen_exit
+                                      : Icons.fullscreen,
+                                ),
+                                onPressed: _toggleSystemFullscreen,
+                              ),
+                          ] else if (!fullscreen) ...[
                             IconButton(
                               mouseCursor: SystemMouseCursors.click,
                               color: Colors.white,

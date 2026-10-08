@@ -297,10 +297,7 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: [
-              for (final value in values)
-                _MetadataTag(label: value),
-            ],
+            children: [for (final value in values) _MetadataTag(label: value)],
           ),
       ],
     ),

@@ -65,6 +65,20 @@ void main() {
   testWidgets('mouse reveals controls and keeps hovered controls visible', (
     tester,
   ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final fullscreenCalls = <bool>[];
+    const windowChannel = MethodChannel('pronhub/window');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      windowChannel,
+      (call) async => fullscreenCalls.add(call.arguments as bool),
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        windowChannel,
+        null,
+      ),
+    );
     final platform = _PlayerPlatform();
     await tester.pumpWidget(
       MaterialApp(
@@ -98,7 +112,7 @@ void main() {
       RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
       SystemMouseCursors.click,
     );
-    await mouse.moveTo(tester.getCenter(find.byTooltip('全屏播放')));
+    await mouse.moveTo(tester.getCenter(find.byTooltip('界面内全屏')));
     await tester.pump();
     expect(
       RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
@@ -110,9 +124,36 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(seconds: 5));
     expect(find.byTooltip('暂停'), findsNothing);
+    await mouse.moveTo(const Offset(210, 210));
+    await tester.pump();
+    await tester.tap(find.byTooltip('桌面系统全屏'));
+    await tester.pump();
+    expect(fullscreenCalls, [true]);
+    expect(find.byTooltip('退出系统全屏'), findsOneWidget);
+    expect(find.byTooltip('退出界面全屏'), findsNothing);
+    expect(find.byTooltip('界面内全屏'), findsNothing);
+    await tester.tap(find.byTooltip('退出系统全屏'));
+    await tester.pump();
+    expect(fullscreenCalls, [true, false]);
+    expect(find.byTooltip('界面内全屏'), findsOneWidget);
+    expect(find.byTooltip('退出界面全屏'), findsNothing);
+    expect(find.byTooltip('桌面系统全屏'), findsOneWidget);
+    await tester.tap(find.byTooltip('界面内全屏'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('桌面系统全屏'));
+    await tester.pump();
+    expect(find.byTooltip('退出界面全屏'), findsNothing);
+    await tester.tap(find.byTooltip('退出系统全屏'));
+    await tester.pump();
+    expect(fullscreenCalls, [true, false, true, false]);
+    expect(find.byTooltip('退出界面全屏'), findsOneWidget);
+    expect(find.byTooltip('界面内全屏'), findsNothing);
+    await tester.tap(find.byTooltip('退出界面全屏'));
+    await tester.pump();
     await mouse.removePointer();
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
+    debugDefaultTargetPlatformOverride = null;
   });
 
   testWidgets('failed open refreshes once and resumed progress clears errors', (
@@ -351,7 +392,8 @@ void main() {
     expect(platform.volume, tabletVolume);
     await tester.tap(find.byTooltip('退出全屏'));
     await tester.pump();
-    expect(find.byTooltip('全屏播放'), findsOneWidget);
+    expect(find.byTooltip('界面内全屏'), findsOneWidget);
+    expect(find.byTooltip('桌面系统全屏'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
