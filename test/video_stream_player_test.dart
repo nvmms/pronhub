@@ -101,6 +101,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(seconds: 5));
     expect(find.byTooltip('暂停'), findsNothing);
+    expect(find.byTooltip('返回'), findsOneWidget);
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer(location: const Offset(1, 1));
     await mouse.moveTo(const Offset(200, 200));
@@ -201,6 +202,7 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
     expect(refreshes, 1);
     expect(find.text('Failed to open fresh.m3u8'), findsOneWidget);
+    expect(find.byTooltip('返回'), findsOneWidget);
     await platform.seek(const Duration(seconds: 1));
     await tester.pump();
     await tester.pump();

@@ -593,6 +593,39 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
 
   @override
   Widget build(BuildContext context) {
+    final content = _buildContent(context);
+    if (_isFullscreen ||
+        (_selected != null &&
+            _ready &&
+            !_refreshingSources &&
+            _error == null)) {
+      return content;
+    }
+    return Stack(
+      fit: StackFit.expand,
+      children: [content, _inlineBackButton()],
+    );
+  }
+
+  Widget _inlineBackButton() => Positioned(
+    top: 4,
+    left: 4,
+    child: SafeArea(
+      bottom: false,
+      child: IconButton(
+        mouseCursor: SystemMouseCursors.click,
+        tooltip: '返回',
+        style: IconButton.styleFrom(
+          foregroundColor: Colors.white,
+          backgroundColor: Colors.black54,
+        ),
+        icon: const Icon(Icons.arrow_back_ios_new, size: 22),
+        onPressed: () => Navigator.maybePop(context),
+      ),
+    ),
+  );
+
+  Widget _buildContent(BuildContext context) {
     final controller = _controller;
     if (_selected == null) {
       return const Center(
@@ -752,49 +785,50 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
                     ),
                   ),
                 ),
-                Positioned(
-                  top: fullscreen ? 16 : 4,
-                  left: 4,
-                  right: 60,
-                  child: _mouseControls(
-                    SafeArea(
-                      bottom: false,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              IconButton(
-                                mouseCursor: SystemMouseCursors.click,
-                                color: Colors.white,
-                                tooltip: fullscreen ? '退出全屏' : '返回',
-                                icon: const Icon(
-                                  Icons.arrow_back_ios_new,
-                                  size: 22,
+                if (fullscreen)
+                  Positioned(
+                    top: fullscreen ? 16 : 4,
+                    left: 4,
+                    right: 60,
+                    child: _mouseControls(
+                      SafeArea(
+                        bottom: false,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                IconButton(
+                                  mouseCursor: SystemMouseCursors.click,
+                                  color: Colors.white,
+                                  tooltip: fullscreen ? '退出全屏' : '返回',
+                                  icon: const Icon(
+                                    Icons.arrow_back_ios_new,
+                                    size: 22,
+                                  ),
+                                  onPressed: fullscreen
+                                      ? onFullscreenPressed
+                                      : () => Navigator.maybePop(context),
                                 ),
-                                onPressed: fullscreen
-                                    ? onFullscreenPressed
-                                    : () => Navigator.maybePop(context),
-                              ),
-                              if (fullscreen)
-                                Expanded(
-                                  child: Text(
-                                    widget.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
+                                if (fullscreen)
+                                  Expanded(
+                                    child: Text(
+                                      widget.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ),
-                                ),
-                            ],
-                          ),
-                        ],
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
                 Center(
                   child: _mouseControls(
                     Row(
@@ -941,6 +975,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
                   ),
                 ),
               ],
+              if (!fullscreen) _inlineBackButton(),
               if (phoneControls && !_locked) ...[
                 if (visible || _adjustment == 'brightness')
                   Positioned(
