@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:pronhub/extensions/build_context_extensions.dart';
 import 'package:pronhub/services/orientation_policy.dart';
+import 'package:pronhub/services/playback_route_observer.dart';
 import 'package:pronhub/services/webview_loader.dart';
 import 'package:pronhub/models/video_source.dart';
 import 'package:media_kit/media_kit.dart';
@@ -70,7 +71,32 @@ class VideoStreamPlayer extends StatefulWidget {
   State<VideoStreamPlayer> createState() => VideoStreamPlayerState();
 }
 
-class VideoStreamPlayerState extends State<VideoStreamPlayer> {
+class VideoStreamPlayerState extends State<VideoStreamPlayer> with RouteAware {
+  PageRoute<dynamic>? _route;
+  bool _routeCovered = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic> && route != _route) {
+      playbackRouteObserver.unsubscribe(this);
+      _route = route;
+      playbackRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPushNext() {
+    _routeCovered = true;
+    unawaited(_controller.pause());
+  }
+
+  @override
+  void didPopNext() {
+    _routeCovered = false;
+  }
+
   late final Player _controller;
   VideoController? _videoController;
   final _subscriptions = <StreamSubscription<dynamic>>[];
@@ -440,9 +466,10 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
             },
             start: resumePosition,
           ),
-          play: resumePlaying,
+          play: resumePlaying && !_routeCovered,
         );
         if (!mounted || _disposing || revision != _openRevision) return;
+        if (_routeCovered) await _controller.pause();
         await _controller.setRate(_speed);
         if (!mounted || _disposing || revision != _openRevision) return;
         setState(() => _ready = true);
@@ -459,6 +486,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
 
   @override
   void dispose() {
+    playbackRouteObserver.unsubscribe(this);
     _disposing = true;
     _recoveryTimer?.cancel();
     _controlsTimer?.cancel();

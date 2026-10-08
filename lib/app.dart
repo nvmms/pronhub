@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:pronhub/pages/home_page.dart';
 import 'package:pronhub/services/orientation_policy.dart';
+import 'package:pronhub/services/playback_route_observer.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -12,7 +13,7 @@ class App extends StatelessWidget {
     return MaterialApp(
       title: 'Pronhub',
       debugShowCheckedModeBanner: false,
-      navigatorObservers: [_orientationPolicy],
+      navigatorObservers: [_orientationPolicy, playbackRouteObserver],
       builder: (context, child) {
         _orientationPolicy.update(context);
         return child!;

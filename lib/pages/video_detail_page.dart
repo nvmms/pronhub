@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:pronhub/services/orientation_policy.dart';
 import 'package:pronhub/models/video_detail.dart';
 import 'package:pronhub/models/video_item.dart';
+import 'package:pronhub/models/category_item.dart';
+import 'package:pronhub/views/video_view.dart';
+import 'package:pronhub/pages/language_page.dart';
 import 'package:pronhub/services/api.dart';
 import 'package:pronhub/services/data_cache.dart';
 import 'package:pronhub/widgets/thumbnail_image.dart';
@@ -253,7 +256,13 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
             ],
           ),
           const SizedBox(height: 20),
-          _section('分类', detail.categories, maxRows: context.isPhone ? 2 : 3),
+          _section(
+            '分类',
+            detail.categories,
+            maxRows: context.isPhone ? 2 : 3,
+            onSelected: (name) =>
+                _openMetadataList(name, detail.categoryPaths[name]),
+          ),
           if (!context.isPhone)
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
@@ -270,15 +279,49 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
     );
   }
 
+  void _openMetadataList(String name, String? path) {
+    if (path == null) return;
+    final item = CategoryItem(name: name, url: Uri.parse(path), path: path);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: Text(name)),
+          body: VideoView(path: item.path, category: item),
+        ),
+      ),
+    );
+  }
+
   Widget _metadata(VideoDetail detail) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      _section('标签', detail.tags, maxRows: context.isPhone ? 2 : null),
-      if (detail.language.isNotEmpty) _section('语言', [detail.language]),
+      _section(
+        '标签',
+        detail.tags,
+        maxRows: context.isPhone ? 2 : null,
+        onSelected: (name) => _openMetadataList(name, detail.tagPaths[name]),
+      ),
+      if (detail.language.isNotEmpty)
+        _section(
+          '语言',
+          [detail.language],
+          onSelected: (_) => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => LanguagePage(
+                language: detail.languageCode ?? detail.language,
+              ),
+            ),
+          ),
+        ),
     ],
   );
 
-  Widget _section(String title, List<String> values, {int? maxRows}) => Padding(
+  Widget _section(
+    String title,
+    List<String> values, {
+    int? maxRows,
+    ValueChanged<String>? onSelected,
+  }) => Padding(
     padding: const EdgeInsets.only(bottom: 16),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -292,12 +335,19 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
             title,
             values,
             _expandedSections.contains(title) ? null : maxRows,
+            onSelected: onSelected,
           )
         else
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: [for (final value in values) _MetadataTag(label: value)],
+            children: [
+              for (final value in values)
+                GestureDetector(
+                  onTap: onSelected == null ? null : () => onSelected(value),
+                  child: _MetadataTag(label: value),
+                ),
+            ],
           ),
       ],
     ),
@@ -306,8 +356,9 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
   Widget _limitedRows(
     String title,
     List<String> values,
-    int? maxRows,
-  ) => LayoutBuilder(
+    int? maxRows, {
+    ValueChanged<String>? onSelected,
+  }) => LayoutBuilder(
     builder: (context, constraints) {
       final style = Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
       final textDirection = Directionality.of(context);
@@ -358,7 +409,10 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
               constraints: BoxConstraints(maxWidth: constraints.maxWidth),
               child: MouseRegion(
                 cursor: SystemMouseCursors.click,
-                child: _MetadataTag(label: value, compact: true),
+                child: GestureDetector(
+                  onTap: onSelected == null ? null : () => onSelected(value),
+                  child: _MetadataTag(label: value, compact: true),
+                ),
               ),
             ),
           if (hasMore)

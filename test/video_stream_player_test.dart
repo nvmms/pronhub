@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pronhub/models/video_source.dart';
+import 'package:pronhub/services/playback_route_observer.dart';
 import 'package:pronhub/widgets/video_stream_player.dart';
 import 'package:media_kit/media_kit.dart';
 
@@ -80,8 +81,11 @@ void main() {
       ),
     );
     final platform = _PlayerPlatform();
+    final navigatorKey = GlobalKey<NavigatorState>();
     await tester.pumpWidget(
       MaterialApp(
+        navigatorKey: navigatorKey,
+        navigatorObservers: [playbackRouteObserver],
         home: Scaffold(
           body: VideoStreamPlayer(
             playerFactory: () => Player(platformPlayer: platform),
@@ -152,6 +156,17 @@ void main() {
     await tester.tap(find.byTooltip('退出界面全屏'));
     await tester.pump();
     await mouse.removePointer();
+    expect(platform.state.playing, isTrue);
+    navigatorKey.currentState!.push(
+      MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('New page')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(platform.state.playing, isFalse);
+    navigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(platform.state.playing, isFalse);
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
     debugDefaultTargetPlatformOverride = null;
