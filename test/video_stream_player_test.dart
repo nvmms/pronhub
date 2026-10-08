@@ -1,77 +1,65 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pronhub/models/video_source.dart';
 import 'package:pronhub/widgets/video_stream_player.dart';
-import 'package:video_player_platform_interface/video_player_platform_interface.dart';
+import 'package:media_kit/media_kit.dart';
 
-class _PlayerPlatform extends VideoPlayerPlatform {
-  final streams = <int, StreamController<VideoEvent>>{};
-  int nextId = 0;
-  double speed = 1;
-  double volume = 1;
-  Duration position = Duration.zero;
+class _PlayerPlatform extends PlatformPlayer {
+  _PlayerPlatform() : super(configuration: const PlayerConfiguration());
+
+  double get speed => state.rate;
+  double get volume => state.volume / 100;
+  Duration get position => state.position;
+  Media? media;
 
   @override
-  Future<void> init() async {}
-  @override
-  Future<int?> createWithOptions(VideoCreationOptions options) async {
-    final id = nextId++;
-    streams[id] = StreamController<VideoEvent>()
-      ..add(
-        VideoEvent(
-          eventType: VideoEventType.initialized,
-          size: const Size(1280, 720),
-          duration: const Duration(minutes: 10),
-        ),
-      );
-    return id;
+  Future<void> open(Playable playable, {bool play = true}) async {
+    media = playable as Media;
+    state = state.copyWith(
+      playing: play,
+      duration: const Duration(minutes: 10),
+      position: media!.start ?? Duration.zero,
+    );
+    playingController.add(play);
+    durationController.add(state.duration);
   }
 
   @override
-  Stream<VideoEvent> videoEventsFor(int playerId) => streams[playerId]!.stream;
-  @override
-  Future<void> dispose(int playerId) async {
-    await streams[playerId]!.close();
+  Future<void> play() async {
+    state = state.copyWith(playing: true);
+    playingController.add(true);
   }
 
   @override
-  Future<void> play(int playerId) async {}
-  @override
-  Future<void> pause(int playerId) async {}
-  @override
-  Future<void> setLooping(int playerId, bool looping) async {}
-  @override
-  Future<void> setVolume(int playerId, double volume) async {
-    this.volume = volume;
+  Future<void> pause() async {
+    state = state.copyWith(playing: false);
+    playingController.add(false);
   }
 
   @override
-  Future<void> setPlaybackSpeed(int playerId, double speed) async {
-    this.speed = speed;
+  Future<void> setVolume(double volume) async {
+    state = state.copyWith(volume: volume);
+    volumeController.add(volume);
   }
 
   @override
-  Future<void> seekTo(int playerId, Duration position) async {
-    this.position = position;
+  Future<void> setRate(double rate) async {
+    state = state.copyWith(rate: rate);
+    rateController.add(rate);
   }
 
   @override
-  Future<Duration> getPosition(int playerId) async => position;
-  @override
-  Widget buildViewWithOptions(VideoViewOptions options) =>
-      const ColoredBox(color: Color(0xFF293D42));
+  Future<void> seek(Duration position) async {
+    state = state.copyWith(position: position);
+    positionController.add(position);
+  }
 }
 
 void main() {
   testWidgets('portrait and fullscreen controls, locking, speed and seeking', (
     tester,
   ) async {
-    final previous = VideoPlayerPlatform.instance;
     final platform = _PlayerPlatform();
-    VideoPlayerPlatform.instance = platform;
-    addTearDown(() => VideoPlayerPlatform.instance = previous);
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -84,11 +72,17 @@ void main() {
             child: AspectRatio(
               aspectRatio: 16 / 9,
               child: VideoStreamPlayer(
+                playerFactory: () => Player(platformPlayer: platform),
+                videoSurface: const ColoredBox(color: Color(0xFF293D42)),
                 title: '测试视频',
                 sources: [
                   VideoSource(
                     url: Uri.parse('https://example.com/video.m3u8'),
                     quality: '720p',
+                  ),
+                  VideoSource(
+                    url: Uri.parse('https://example.com/480.m3u8'),
+                    quality: '480p',
                   ),
                 ],
                 pageUrl: Uri.parse('https://example.com/video'),
@@ -100,6 +94,10 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      platform.media!.httpHeaders?['Referer'],
+      'https://example.com/video',
+    );
     expect(find.byTooltip('暂停'), findsOneWidget);
     expect(find.byTooltip('全屏播放'), findsOneWidget);
     expect(find.byTooltip('播放速度'), findsNothing);
@@ -155,6 +153,19 @@ void main() {
     await tester.tap(find.text('1.5x'));
     await tester.pumpAndSettle();
     expect(platform.speed, 1.5);
+    await tester.tap(find.byTooltip('暂停'));
+    await tester.pump();
+    final resumePosition = platform.position;
+    final resumeVolume = platform.volume;
+    await tester.tap(find.byTooltip('清晰度'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('480p'));
+    await tester.pumpAndSettle();
+    expect(platform.media!.uri, 'https://example.com/480.m3u8');
+    expect(platform.media!.start, resumePosition);
+    expect(platform.state.playing, isFalse);
+    expect(platform.speed, 1.5);
+    expect(platform.volume, resumeVolume);
     await tester.tap(find.byTooltip('锁定控制'));
     await tester.pump();
     expect(find.byTooltip('播放速度'), findsNothing);

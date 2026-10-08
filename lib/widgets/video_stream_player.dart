@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pronhub/services/orientation_policy.dart';
 import 'package:pronhub/models/video_source.dart';
-import 'package:video_player/video_player.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 class VideoStreamPlayer extends StatefulWidget {
   const VideoStreamPlayer({
@@ -12,18 +13,29 @@ class VideoStreamPlayer extends StatefulWidget {
     required this.sources,
     required this.pageUrl,
     this.title = '',
+    this.playerFactory,
+    this.videoSurface,
   });
 
   final List<VideoSource> sources;
   final Uri pageUrl;
   final String title;
+  @visibleForTesting
+  final Player Function()? playerFactory;
+  @visibleForTesting
+  final Widget? videoSurface;
 
   @override
   State<VideoStreamPlayer> createState() => VideoStreamPlayerState();
 }
 
 class VideoStreamPlayerState extends State<VideoStreamPlayer> {
-  VideoPlayerController? _controller;
+  late final Player _controller;
+  VideoController? _videoController;
+  final _subscriptions = <StreamSubscription<dynamic>>[];
+  bool _ready = false;
+  Future<void> _openQueue = Future<void>.value();
+  int _openRevision = 0;
   VideoSource? _selected;
   Object? _error;
   bool _isFullscreen = false;
@@ -50,12 +62,14 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
 
   void _dragAdjustment(DragUpdateDetails details) {
     final controller = _controller;
-    if (controller == null || _adjustment == null) return;
+    if (_adjustment == null) return;
     final change = -details.delta.dy / 200;
     if (_adjustment == 'brightness') {
       setState(() => _brightness = (_brightness + change).clamp(.2, 1.0));
     } else {
-      controller.setVolume((controller.value.volume + change).clamp(0.0, 1.0));
+      controller.setVolume(
+        ((controller.state.volume / 100) + change).clamp(0.0, 1.0) * 100,
+      );
     }
     _fullscreenRevision.value++;
   }
@@ -70,15 +84,15 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
     _refreshControls();
   }
 
-  Widget _sideAdjustment(String kind, VideoPlayerController controller) {
+  Widget _sideAdjustment(String kind, Player controller) {
     final active = _adjustment == kind;
     final brightness = kind == 'brightness';
     final level = brightness
         ? (_brightness - .2) / .8
-        : controller.value.volume;
+        : (controller.state.volume / 100);
     final icon = brightness
         ? Icons.brightness_6_outlined
-        : (controller.value.volume == 0
+        : ((controller.state.volume / 100) == 0
               ? Icons.volume_off_outlined
               : Icons.volume_up_outlined);
     return Semantics(
@@ -100,7 +114,9 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
           height: 220,
           child: active
               ? Row(
-                  textDirection: brightness ? TextDirection.ltr : TextDirection.rtl,
+                  textDirection: brightness
+                      ? TextDirection.ltr
+                      : TextDirection.rtl,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Column(
@@ -154,7 +170,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
 
   void _refreshControls() {
     _controlsTimer?.cancel();
-    if (_controller?.value.isPlaying != true) return;
+    if (_controller.state.playing != true) return;
     _controlsTimer = Timer(const Duration(seconds: 4), () {
       if (!mounted) return;
       setState(() {
@@ -188,6 +204,32 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
   @override
   void initState() {
     super.initState();
+    _controller = widget.playerFactory?.call() ?? Player();
+    if (widget.videoSurface == null) {
+      _videoController = VideoController(_controller);
+    }
+    void update(dynamic _) {
+      if (!mounted || _disposing) return;
+      setState(() {});
+      _fullscreenRevision.value++;
+    }
+
+    for (final stream in <Stream<dynamic>>[
+      _controller.stream.playing,
+      _controller.stream.position,
+      _controller.stream.duration,
+      _controller.stream.buffering,
+      _controller.stream.volume,
+    ]) {
+      _subscriptions.add(stream.listen(update));
+    }
+    _subscriptions.add(
+      _controller.stream.error.listen((error) {
+        if (!mounted || _disposing) return;
+        setState(() => _error = error);
+        _fullscreenRevision.value++;
+      }),
+    );
     if (widget.sources.isNotEmpty) {
       _open(_preferredSource());
     }
@@ -203,47 +245,40 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
     }
   }
 
-  Future<void> _open(VideoSource source) async {
-    final previous = _controller;
-    final resumePlaying = previous?.value.isPlaying ?? true;
-    final volume = previous?.value.volume ?? 1.0;
-    final resumePosition = previous?.value.isInitialized == true
-        ? previous!.value.position
-        : Duration.zero;
-    final controller = VideoPlayerController.networkUrl(
-      source.url,
-      formatHint: VideoFormat.hls,
-      httpHeaders: {'Referer': widget.pageUrl.toString()},
-    );
+  Future<void> _open(VideoSource source) {
+    final revision = ++_openRevision;
+    final resumePlaying = !_ready || _controller.state.playing;
+    final resumePosition = _ready ? _controller.state.position : Duration.zero;
     setState(() {
       _selected = source;
-      _controller = controller;
+      _ready = false;
       _error = null;
     });
     _fullscreenRevision.value++;
-    if (previous != null) await previous.dispose();
-    try {
-      await controller.initialize();
-      if (!mounted || !identical(_controller, controller)) return;
-      if (resumePosition > Duration.zero) {
-        final duration = controller.value.duration;
-        await controller.seekTo(
-          resumePosition < duration ? resumePosition : duration,
+    return _openQueue = _openQueue.then((_) async {
+      if (_disposing || revision != _openRevision) return;
+      try {
+        await _controller.open(
+          Media(
+            source.url.toString(),
+            httpHeaders: {'Referer': widget.pageUrl.toString()},
+            start: resumePosition,
+          ),
+          play: resumePlaying,
         );
-      }
-      if (!mounted || !identical(_controller, controller)) return;
-      setState(() {});
-      _fullscreenRevision.value++;
-      await controller.setVolume(volume);
-      if (resumePlaying) await controller.play();
-      await controller.setPlaybackSpeed(_speed);
-      _refreshControls();
-    } catch (error) {
-      if (mounted && identical(_controller, controller)) {
-        setState(() => _error = error);
+        if (!mounted || _disposing || revision != _openRevision) return;
+        await _controller.setRate(_speed);
+        if (!mounted || _disposing || revision != _openRevision) return;
+        setState(() => _ready = true);
         _fullscreenRevision.value++;
+        _refreshControls();
+      } catch (error) {
+        if (mounted && !_disposing && revision == _openRevision) {
+          setState(() => _error = error);
+          _fullscreenRevision.value++;
+        }
       }
-    }
+    });
   }
 
   @override
@@ -255,7 +290,10 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
     _fullscreenHistory = null;
     history?.remove();
     _removeFullscreenOverlay();
-    _controller?.dispose();
+    for (final subscription in _subscriptions) {
+      unawaited(subscription.cancel());
+    }
+    unawaited(_openQueue.whenComplete(_controller.dispose));
     _fullscreenRevision.dispose();
     super.dispose();
   }
@@ -289,10 +327,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
   }
 
   void showFullscreen() {
-    final controller = _controller;
-    if (controller == null ||
-        !controller.value.isInitialized ||
-        _isFullscreen) {
+    if (!_ready || _isFullscreen) {
       return;
     }
     setState(() {
@@ -339,7 +374,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
         ),
       );
     }
-    if (controller == null || !controller.value.isInitialized) {
+    if (!_ready) {
       return _fullscreenStatus(const CircularProgressIndicator());
     }
     return _playerSurface(
@@ -368,7 +403,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
-    if (controller == null) {
+    if (_selected == null) {
       return const Center(
         child: Text('没有可用的播放地址', style: TextStyle(color: Colors.white70)),
       );
@@ -387,7 +422,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
         ),
       );
     }
-    if (!controller.value.isInitialized) {
+    if (!_ready) {
       return const Center(child: CircularProgressIndicator());
     }
     if (_isFullscreen) return const ColoredBox(color: Colors.black);
@@ -406,14 +441,14 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
       );
 
   Widget _playerSurface(
-    VideoPlayerController controller, {
+    Player controller, {
     bool fullscreen = false,
     VoidCallback? onFullscreenPressed,
   }) => AnimatedBuilder(
-    animation: controller,
+    animation: _fullscreenRevision,
     builder: (context, _) {
-      final value = controller.value;
-      final visible = _controlsVisible || !value.isPlaying;
+      final value = controller.state;
+      final visible = _controlsVisible || !value.playing;
       final duration = value.duration.inMilliseconds.toDouble();
       final position = value.position.inMilliseconds.toDouble().clamp(
         0.0,
@@ -433,7 +468,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
           max: duration > 0 ? duration : 1,
           onChangeStart: (_) => _controlsTimer?.cancel(),
           onChanged: (milliseconds) =>
-              controller.seekTo(Duration(milliseconds: milliseconds.round())),
+              controller.seek(Duration(milliseconds: milliseconds.round())),
           onChangeEnd: (_) => _refreshControls(),
         ),
       );
@@ -465,18 +500,18 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
               onDoubleTap: _locked
                   ? null
                   : () {
-                      value.isPlaying ? controller.pause() : controller.play();
+                      value.playing ? controller.pause() : controller.play();
                       _changeControls(() => _controlsVisible = true);
                     },
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Center(
-                    child: AspectRatio(
-                      aspectRatio: value.aspectRatio,
-                      child: VideoPlayer(controller),
-                    ),
-                  ),
+                  widget.videoSurface ??
+                      Video(
+                        controller: _videoController!,
+                        controls: NoVideoControls,
+                        fit: BoxFit.contain,
+                      ),
                   IgnorePointer(
                     child: ColoredBox(
                       color: Colors.black.withValues(alpha: 1 - _brightness),
@@ -485,7 +520,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
                 ],
               ),
             ),
-            if (value.isBuffering)
+            if (value.buffering)
               const IgnorePointer(
                 child: Center(
                   child: CircularProgressIndicator(color: Colors.white),
@@ -553,18 +588,16 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      tooltip: value.isPlaying ? '暂停' : '播放',
+                      tooltip: value.playing ? '暂停' : '播放',
                       iconSize: 60,
                       color: Colors.white,
                       icon: Icon(
-                        value.isPlaying
+                        value.playing
                             ? Icons.pause_rounded
                             : Icons.play_arrow_rounded,
                       ),
                       onPressed: () {
-                        value.isPlaying
-                            ? controller.pause()
-                            : controller.play();
+                        value.playing ? controller.pause() : controller.play();
                         _changeControls(() => _controlsVisible = true);
                       },
                     ),
@@ -592,7 +625,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
                           onOpened: () => _controlsTimer?.cancel(),
                           onCanceled: _refreshControls,
                           onSelected: (speed) {
-                            controller.setPlaybackSpeed(speed);
+                            controller.setRate(speed);
                             _changeControls(() => _speed = speed);
                           },
                           itemBuilder: (_) => [
