@@ -113,13 +113,10 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
         return LayoutBuilder(
           builder: (context, constraints) {
             final wide = constraints.maxWidth >= 720;
-            final availableWidth = (constraints.maxWidth - 48).clamp(
+            final contentWidth = (constraints.maxWidth - 48).clamp(
               0.0,
               double.infinity,
             );
-            final contentWidth = availableWidth > 1380
-                ? 1380.0
-                : availableWidth;
             final sideWidth = wide ? contentWidth * .34 : contentWidth;
             final playerWidth = wide
                 ? contentWidth - sideWidth - 24

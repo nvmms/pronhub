@@ -1,36 +1,64 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:webview_all/webview_all.dart';
 
-/// Serializes page loads through one JavaScript-enabled WebView.
+/// Serializes page loads through one JavaScript-enabled
+/// offscreen WebView.
+///
+/// Supports Android, iOS and Windows.
 class WebViewLoader {
-  static const _desktopUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+  static const _desktopUserAgent =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
       'AppleWebKit/537.36 (KHTML, like Gecko) '
       'Chrome/154.0.0.0 Safari/537.36';
 
-  WebViewLoader._() {
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
+  WebViewLoader._();
+
+  static final instance = WebViewLoader._();
+
+  OffscreenWebViewSession? _session;
+  WebViewController? _controller;
+
+  Future<void>? _initializing;
+  Future<void> _queue = Future<void>.value();
+
+  _LoadTask? _active;
+  Completer<void>? _blankPageFinished;
+
+  Future<void> _ensureInitialized() {
+    return _initializing ??= _initialize().catchError((
+      Object error,
+      StackTrace stack,
+    ) {
+      _initializing = null;
+      Error.throwWithStackTrace(error, stack);
+    });
+  }
+
+  Future<void> _initialize() async {
+    final session = await OffscreenWebViewSession.create();
+    try {
+      final controller = session.controller;
+
+      await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+
+      await controller.setUserAgent(_desktopUserAgent);
+
+      await controller.setNavigationDelegate(
         NavigationDelegate(
           onPageFinished: _onPageFinished,
           onWebResourceError: _onError,
         ),
       );
-    _configureMediaPlayback = _controller.platform is AndroidWebViewController
-        ? (_controller.platform as AndroidWebViewController)
-            .setMediaPlaybackRequiresUserGesture(true)
-        : Future<void>.value();
-  }
 
-  static final instance = WebViewLoader._();
-  late final WebViewController _controller;
-  late final Future<void> _configureMediaPlayback;
-  Future<void> _queue = Future<void>.value();
-  _LoadTask? _active;
-  Completer<void>? _blankPageFinished;
+      _controller = controller;
+      _session = session;
+    } catch (_) {
+      await session.close();
+      rethrow;
+    }
+  }
 
   Future<String> load(
     Uri uri, {
@@ -38,33 +66,47 @@ class WebViewLoader {
     Duration timeout = const Duration(seconds: 30),
   }) {
     final result = _queue.then((_) => _load(uri, selector, timeout));
-    _queue = result.then<void>((_) {}, onError: (error, stack) {});
+
+    _queue = result.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stack) {},
+    );
+
     return result;
   }
 
   Future<String> _load(Uri uri, String selector, Duration timeout) async {
+    await _ensureInitialized();
+
+    final controller = _controller!;
     final task = _LoadTask(uri, selector);
     _active = task;
+
     try {
-      await _configureMediaPlayback;
-      await _controller.setUserAgent(_desktopUserAgent);
-      await _controller.loadRequest(uri);
+      await controller.loadRequest(uri);
+
       return await task.result.future.timeout(timeout);
     } on TimeoutException {
       try {
-        await _controller.runJavaScript('window.stop()');
+        await controller.runJavaScript('window.stop()');
       } catch (_) {}
+
       throw TimeoutException('首页加载超时：$uri', timeout);
     } finally {
-      if (identical(_active, task)) _active = null;
-      // The WebView only scrapes HTML. Unload the page so its video player
-      // cannot keep a decoder alive alongside the Flutter player.
+      if (identical(_active, task)) {
+        _active = null;
+      }
+
+      // Unload video resources to release the decoder.
       final blankPageFinished = Completer<void>();
       _blankPageFinished = blankPageFinished;
+
       try {
-        await _controller.loadRequest(Uri.parse('about:blank'));
+        await controller.loadRequest(Uri.parse('about:blank'));
+
         await blankPageFinished.future.timeout(const Duration(seconds: 3));
       } catch (_) {}
+
       if (identical(_blankPageFinished, blankPageFinished)) {
         _blankPageFinished = null;
       }
@@ -73,65 +115,120 @@ class WebViewLoader {
 
   Future<void> _onPageFinished(String url) async {
     if (url == 'about:blank') {
-      final blankPageFinished = _blankPageFinished;
-      if (blankPageFinished != null && !blankPageFinished.isCompleted) {
-        blankPageFinished.complete();
+      final completer = _blankPageFinished;
+
+      if (completer != null && !completer.isCompleted) {
+        completer.complete();
       }
       return;
     }
+
     final task = _active;
-    if (task == null || task.extracting || task.result.isCompleted) return;
+
+    if (task == null || task.extracting || task.result.isCompleted) {
+      return;
+    }
+
     final loadedUri = Uri.tryParse(url);
+
     if (task.uri.path == '/video' &&
         loadedUri?.path != '/video' &&
         loadedUri?.path != '/video/') {
-      task.result.completeError(
-        FormatException('视频页面被重定向：${task.uri} → $url'),
-      );
+      task.result.completeError(FormatException('视频页面被重定向：${task.uri} → $url'));
       return;
     }
+
     task.extracting = true;
+
     try {
+      final controller = _controller!;
       final deadline = DateTime.now().add(const Duration(seconds: 15));
+
+      final targetSelector = task.selector == 'ul#videoCategory'
+          ? 'ul#videoCategory li.pcVideoListItem'
+          : task.selector;
+
       while (DateTime.now().isBefore(deadline)) {
-        if (!identical(_active, task) || task.result.isCompleted) return;
-        final found = await _controller.runJavaScriptReturningResult(
-          "document.querySelector(${jsonEncode(task.selector == 'ul#videoCategory' ? 'ul#videoCategory li.pcVideoListItem' : task.selector)}) ? 'ready' : 'waiting'",
-        );
-        if (_decode(found) == 'ready') {
-          final html = await _controller.runJavaScriptReturningResult(
-            "document.querySelector(${jsonEncode(task.selector)})?.outerHTML ?? ''",
-          );
-          if (!task.result.isCompleted) task.result.complete(_decode(html));
+        if (!identical(_active, task) || task.result.isCompleted) {
           return;
         }
+
+        final found = await controller.runJavaScriptReturningResult(
+          "document.querySelector("
+          "${jsonEncode(targetSelector)}) "
+          "? 'ready' : 'waiting'",
+        );
+
+        if (_decode(found) == 'ready') {
+          final html = await controller.runJavaScriptReturningResult(
+            "document.querySelector("
+            "${jsonEncode(task.selector)})"
+            "?.outerHTML ?? ''",
+          );
+
+          if (!task.result.isCompleted) {
+            task.result.complete(_decode(html));
+          }
+          return;
+        }
+
         await Future<void>.delayed(const Duration(milliseconds: 200));
       }
+
       throw TimeoutException('等待 PC 端视频列表超时');
     } catch (error, stack) {
-      if (!task.result.isCompleted) task.result.completeError(error, stack);
+      if (!task.result.isCompleted) {
+        task.result.completeError(error, stack);
+      }
     }
   }
 
   void _onError(WebResourceError error) {
     final task = _active;
+
     if (task == null ||
         error.isForMainFrame != true ||
         task.result.isCompleted) {
       return;
     }
+
     task.result.completeError(Exception('页面加载失败：${error.description}'));
   }
 
   static String _decode(Object result) {
-    final value = result.toString();
-    try {
-      final decoded = jsonDecode(value);
-      if (decoded is String) return decoded;
-    } on FormatException {
-      // iOS may return the string without JSON encoding.
+    if (result is String) {
+      try {
+        final decoded = jsonDecode(result);
+        if (decoded is String) return decoded;
+      } on FormatException {
+        // Some platforms return plain strings.
+      }
+      return result;
     }
-    return value;
+
+    return result.toString();
+  }
+
+  /// Call when the loader is no longer needed.
+  /// Do not call while load() tasks are running.
+  Future<void> dispose() async {
+    await _queue;
+
+    final initializing = _initializing;
+    if (initializing != null) {
+      try {
+        await initializing;
+      } catch (_) {}
+    }
+
+    final session = _session;
+    _session = null;
+    _controller = null;
+    _initializing = null;
+
+    if (session != null) {
+      await session.close();
+    }
   }
 }
 
@@ -141,5 +238,6 @@ class _LoadTask {
   final Uri uri;
   final String selector;
   final result = Completer<String>();
+
   bool extracting = false;
 }
