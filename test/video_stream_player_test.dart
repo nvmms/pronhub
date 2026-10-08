@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pronhub/models/video_source.dart';
 import 'package:pronhub/widgets/video_stream_player.dart';
@@ -59,6 +62,59 @@ class _PlayerPlatform extends PlatformPlayer {
 }
 
 void main() {
+  testWidgets('mouse reveals controls and keeps hovered controls visible', (
+    tester,
+  ) async {
+    final platform = _PlayerPlatform();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoStreamPlayer(
+            playerFactory: () => Player(platformPlayer: platform),
+            videoSurface: const SizedBox(),
+            sources: [
+              VideoSource(
+                url: Uri.parse('https://example.com/video.m3u8'),
+                quality: '720p',
+              ),
+            ],
+            pageUrl: Uri.parse('https://example.com/video'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 5));
+    expect(find.byTooltip('暂停'), findsNothing);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(1, 1));
+    await mouse.moveTo(const Offset(200, 200));
+    await tester.pump();
+    expect(find.byTooltip('暂停'), findsOneWidget);
+    await mouse.moveTo(tester.getCenter(find.byTooltip('暂停')));
+    await tester.pump();
+    expect(
+      RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+      SystemMouseCursors.click,
+    );
+    await mouse.moveTo(tester.getCenter(find.byTooltip('全屏播放')));
+    await tester.pump();
+    expect(
+      RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+      SystemMouseCursors.click,
+    );
+    await tester.pump(const Duration(seconds: 5));
+    expect(find.byTooltip('暂停'), findsOneWidget);
+    await mouse.moveTo(const Offset(200, 200));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 5));
+    expect(find.byTooltip('暂停'), findsNothing);
+    await mouse.removePointer();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+
   testWidgets('failed open refreshes once and resumed progress clears errors', (
     tester,
   ) async {

@@ -270,6 +270,7 @@ class _VideoViewState extends State<VideoView> {
                           itemBuilder: (context, index) {
                             final item = _videos![index];
                             return InkWell(
+                              mouseCursor: SystemMouseCursors.click,
                               hoverColor: Colors.transparent,
                               highlightColor: Colors.transparent,
                               splashColor: Colors.transparent,

@@ -91,6 +91,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
   Timer? _controlsTimer;
   Timer? _adjustmentTimer;
   bool _controlsVisible = true;
+  bool _hoveringControls = false;
   bool _locked = false;
   String? _adjustment;
   double _brightness = 1;
@@ -215,7 +216,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
 
   void _refreshControls() {
     _controlsTimer?.cancel();
-    if (_controller.state.playing != true) return;
+    if (_hoveringControls || _controller.state.playing != true) return;
     _controlsTimer = Timer(const Duration(seconds: 4), () {
       if (!mounted) return;
       setState(() {
@@ -225,6 +226,26 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
       _fullscreenRevision.value++;
     });
   }
+
+  void _showMouseControls() {
+    if (!_controlsVisible) {
+      setState(() => _controlsVisible = true);
+      _fullscreenRevision.value++;
+    }
+    _refreshControls();
+  }
+
+  Widget _mouseControls(Widget child) => MouseRegion(
+    onEnter: (_) {
+      _hoveringControls = true;
+      _controlsTimer?.cancel();
+    },
+    onExit: (_) {
+      _hoveringControls = false;
+      _refreshControls();
+    },
+    child: child,
+  );
 
   void _changeControls(VoidCallback change) {
     setState(change);
@@ -508,6 +529,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
         top: 16,
         right: 16,
         child: IconButton(
+          mouseCursor: SystemMouseCursors.click,
           color: Colors.white,
           tooltip: '退出全屏',
           icon: const Icon(Icons.fullscreen_exit),
@@ -554,6 +576,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
 
   Widget _roundButton(IconData icon, String tooltip, VoidCallback onTap) =>
       IconButton(
+        mouseCursor: SystemMouseCursors.click,
         tooltip: tooltip,
         style: IconButton.styleFrom(
           foregroundColor: Colors.white,
@@ -588,6 +611,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
           thumbColor: Colors.white,
         ),
         child: Slider(
+          mouseCursor: SystemMouseCursors.click,
           value: position,
           max: duration > 0 ? duration : 1,
           onChangeStart: (_) => _controlsTimer?.cancel(),
@@ -596,241 +620,269 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
           onChangeEnd: (_) => _refreshControls(),
         ),
       );
-      return DefaultTextStyle(
-        style: const TextStyle(color: Colors.white, fontSize: 13),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onVerticalDragStart: phoneControls && !_locked
-                  ? (details) => _startAdjustment(
-                      details.localPosition.dx <
-                              MediaQuery.sizeOf(context).width / 2
-                          ? 'brightness'
-                          : 'volume',
-                    )
-                  : null,
-              onVerticalDragUpdate: phoneControls && !_locked
-                  ? _dragAdjustment
-                  : null,
-              onVerticalDragEnd: phoneControls && !_locked
-                  ? (_) => _endAdjustment()
-                  : null,
-              onVerticalDragCancel: phoneControls && !_locked
-                  ? _endAdjustment
-                  : null,
-              onTap: () => _changeControls(() => _controlsVisible = !visible),
-              onDoubleTap: _locked
-                  ? null
-                  : () {
-                      value.playing ? controller.pause() : controller.play();
-                      _changeControls(() => _controlsVisible = true);
-                    },
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  widget.videoSurface ??
-                      Video(
-                        controller: _videoController!,
-                        controls: NoVideoControls,
-                        fit: BoxFit.contain,
-                      ),
-                  IgnorePointer(
-                    child: ColoredBox(
-                      color: Colors.black.withValues(alpha: 1 - _brightness),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (value.buffering)
-              const IgnorePointer(
-                child: Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                ),
-              ),
-            if (visible && !_locked) ...[
-              IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black45,
-                        Colors.transparent,
-                        Colors.black54,
-                      ],
-                      stops: const [0, .45, 1],
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: fullscreen ? 16 : 4,
-                left: 4,
-                right: 60,
-                child: SafeArea(
-                  bottom: false,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          IconButton(
-                            color: Colors.white,
-                            tooltip: fullscreen ? '退出全屏' : '返回',
-                            icon: const Icon(
-                              Icons.arrow_back_ios_new,
-                              size: 22,
-                            ),
-                            onPressed: fullscreen
-                                ? onFullscreenPressed
-                                : () => Navigator.maybePop(context),
-                          ),
-                          if (fullscreen)
-                            Expanded(
-                              child: Text(
-                                widget.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: value.playing ? '暂停' : '播放',
-                      iconSize: 60,
-                      color: Colors.white,
-                      icon: Icon(
-                        value.playing
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded,
-                      ),
-                      onPressed: () {
+      return MouseRegion(
+        key: const ValueKey('player-mouse-region'),
+        cursor: SystemMouseCursors.basic,
+        onEnter: (_) => _showMouseControls(),
+        onHover: (_) => _showMouseControls(),
+        onExit: (_) {
+          _hoveringControls = false;
+          _refreshControls();
+        },
+        child: DefaultTextStyle(
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onVerticalDragStart: phoneControls && !_locked
+                    ? (details) => _startAdjustment(
+                        details.localPosition.dx <
+                                MediaQuery.sizeOf(context).width / 2
+                            ? 'brightness'
+                            : 'volume',
+                      )
+                    : null,
+                onVerticalDragUpdate: phoneControls && !_locked
+                    ? _dragAdjustment
+                    : null,
+                onVerticalDragEnd: phoneControls && !_locked
+                    ? (_) => _endAdjustment()
+                    : null,
+                onVerticalDragCancel: phoneControls && !_locked
+                    ? _endAdjustment
+                    : null,
+                onTap: () => _changeControls(() => _controlsVisible = !visible),
+                onDoubleTap: _locked
+                    ? null
+                    : () {
                         value.playing ? controller.pause() : controller.play();
                         _changeControls(() => _controlsVisible = true);
                       },
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    widget.videoSurface ??
+                        Video(
+                          controller: _videoController!,
+                          controls: NoVideoControls,
+                          fit: BoxFit.contain,
+                        ),
+                    IgnorePointer(
+                      child: ColoredBox(
+                        color: Colors.black.withValues(alpha: 1 - _brightness),
+                      ),
                     ),
                   ],
                 ),
               ),
-              Positioned(
-                left: 12,
-                right: 12,
-                bottom: fullscreen ? 8 : 0,
-                child: SafeArea(
-                  top: false,
-                  child: Row(
-                    children: [
-                      Text(
-                        fullscreen
-                            ? '${_time(value.position)} / ${_time(value.duration)}'
-                            : _time(value.position),
+              if (value.buffering)
+                const IgnorePointer(
+                  child: Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                ),
+              if (visible && !_locked) ...[
+                IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black45,
+                          Colors.transparent,
+                          Colors.black54,
+                        ],
+                        stops: const [0, .45, 1],
                       ),
-                      Expanded(child: progress),
-                      if (fullscreen) ...[
-                        PopupMenuButton<double>(
-                          tooltip: '播放速度',
-                          initialValue: _speed,
-                          onOpened: () => _controlsTimer?.cancel(),
-                          onCanceled: _refreshControls,
-                          onSelected: (speed) {
-                            controller.setRate(speed);
-                            _changeControls(() => _speed = speed);
-                          },
-                          itemBuilder: (_) => [
-                            for (final speed in [.5, .75, 1.0, 1.25, 1.5, 2.0])
-                              PopupMenuItem(
-                                value: speed,
-                                child: Text('${speed}x'),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: fullscreen ? 16 : 4,
+                  left: 4,
+                  right: 60,
+                  child: _mouseControls(
+                    SafeArea(
+                      bottom: false,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              IconButton(
+                                mouseCursor: SystemMouseCursors.click,
+                                color: Colors.white,
+                                tooltip: fullscreen ? '退出全屏' : '返回',
+                                icon: const Icon(
+                                  Icons.arrow_back_ios_new,
+                                  size: 22,
+                                ),
+                                onPressed: fullscreen
+                                    ? onFullscreenPressed
+                                    : () => Navigator.maybePop(context),
                               ),
-                          ],
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Text(_speed == 1 ? '倍速' : '${_speed}x'),
+                              if (fullscreen)
+                                Expanded(
+                                  child: Text(
+                                    widget.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
-                        ),
-                        PopupMenuButton<VideoSource>(
-                          tooltip: '清晰度',
-                          initialValue: _selected,
-                          onOpened: () => _controlsTimer?.cancel(),
-                          onCanceled: _refreshControls,
-                          onSelected: (source) {
-                            if (source != _selected) _open(source);
-                            _refreshControls();
-                          },
-                          itemBuilder: (_) => [
-                            for (final source in _sources)
-                              PopupMenuItem(
-                                value: source,
-                                child: Text(source.quality),
-                              ),
-                          ],
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Text(_selected?.quality ?? '清晰度'),
-                          ),
-                        ),
-                      ] else ...[
-                        Text(_time(value.duration)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Center(
+                  child: _mouseControls(
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                         IconButton(
+                          mouseCursor: SystemMouseCursors.click,
+                          tooltip: value.playing ? '暂停' : '播放',
+                          iconSize: 60,
                           color: Colors.white,
-                          tooltip: '全屏播放',
-                          icon: const Icon(Icons.screen_rotation_rounded),
-                          onPressed: showFullscreen,
+                          icon: Icon(
+                            value.playing
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                          ),
+                          onPressed: () {
+                            value.playing
+                                ? controller.pause()
+                                : controller.play();
+                            _changeControls(() => _controlsVisible = true);
+                          },
                         ),
                       ],
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-            if (phoneControls && !_locked) ...[
-              if (visible || _adjustment == 'brightness')
                 Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: _sideAdjustment('brightness', controller),
+                  left: 12,
+                  right: 12,
+                  bottom: fullscreen ? 8 : 0,
+                  child: _mouseControls(
+                    SafeArea(
+                      top: false,
+                      child: Row(
+                        children: [
+                          Text(
+                            fullscreen
+                                ? '${_time(value.position)} / ${_time(value.duration)}'
+                                : _time(value.position),
+                          ),
+                          Expanded(child: progress),
+                          if (fullscreen) ...[
+                            PopupMenuButton<double>(
+                              tooltip: '播放速度',
+                              initialValue: _speed,
+                              onOpened: () => _controlsTimer?.cancel(),
+                              onCanceled: _refreshControls,
+                              onSelected: (speed) {
+                                controller.setRate(speed);
+                                _changeControls(() => _speed = speed);
+                              },
+                              itemBuilder: (_) => [
+                                for (final speed in [
+                                  .5,
+                                  .75,
+                                  1.0,
+                                  1.25,
+                                  1.5,
+                                  2.0,
+                                ])
+                                  PopupMenuItem(
+                                    value: speed,
+                                    child: Text('${speed}x'),
+                                  ),
+                              ],
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Text(_speed == 1 ? '倍速' : '${_speed}x'),
+                              ),
+                            ),
+                            PopupMenuButton<VideoSource>(
+                              tooltip: '清晰度',
+                              initialValue: _selected,
+                              onOpened: () => _controlsTimer?.cancel(),
+                              onCanceled: _refreshControls,
+                              onSelected: (source) {
+                                if (source != _selected) _open(source);
+                                _refreshControls();
+                              },
+                              itemBuilder: (_) => [
+                                for (final source in _sources)
+                                  PopupMenuItem(
+                                    value: source,
+                                    child: Text(source.quality),
+                                  ),
+                              ],
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Text(_selected?.quality ?? '清晰度'),
+                              ),
+                            ),
+                          ] else ...[
+                            Text(_time(value.duration)),
+                            IconButton(
+                              mouseCursor: SystemMouseCursors.click,
+                              color: Colors.white,
+                              tooltip: '全屏播放',
+                              icon: const Icon(Icons.screen_rotation_rounded),
+                              onPressed: showFullscreen,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-              if (visible || _adjustment == 'volume')
+              ],
+              if (phoneControls && !_locked) ...[
+                if (visible || _adjustment == 'brightness')
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: _sideAdjustment('brightness', controller),
+                    ),
+                  ),
+                if (visible || _adjustment == 'volume')
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(child: _sideAdjustment('volume', controller)),
+                  ),
+              ],
+              if (phoneControls && visible)
                 Positioned(
-                  right: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(child: _sideAdjustment('volume', controller)),
+                  top: 100,
+                  right: 12,
+                  child: _roundButton(
+                    _locked ? Icons.lock_outline : Icons.lock_open_outlined,
+                    _locked ? '解锁' : '锁定控制',
+                    () => _changeControls(() {
+                      _locked = !_locked;
+                      _adjustment = null;
+                    }),
+                  ),
                 ),
             ],
-            if (phoneControls && visible)
-              Positioned(
-                top: 100,
-                right: 12,
-                child: _roundButton(
-                  _locked ? Icons.lock_outline : Icons.lock_open_outlined,
-                  _locked ? '解锁' : '锁定控制',
-                  () => _changeControls(() {
-                    _locked = !_locked;
-                    _adjustment = null;
-                  }),
-                ),
-              ),
-          ],
+          ),
         ),
       );
     },

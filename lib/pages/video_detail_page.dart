@@ -256,6 +256,9 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
           _section('分类', detail.categories, maxRows: context.isPhone ? 2 : 3),
           if (!context.isPhone)
             OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                enabledMouseCursor: SystemMouseCursors.click,
+              ),
               onPressed: snapshot.data?.sources.isNotEmpty == true
                   ? () => _playerKey.currentState?.showFullscreen()
                   : null,
@@ -296,7 +299,7 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
             runSpacing: 8,
             children: [
               for (final value in values)
-                Chip(label: Text(value), visualDensity: VisualDensity.compact),
+                _MetadataTag(label: value),
             ],
           ),
       ],
@@ -356,20 +359,9 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
           for (final value in values.take(visibleCount))
             ConstrainedBox(
               constraints: BoxConstraints(maxWidth: constraints.maxWidth),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: style,
-                ),
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: _MetadataTag(label: value, compact: true),
               ),
             ),
           if (hasMore)
@@ -378,6 +370,7 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
+                  mouseCursor: SystemMouseCursors.click,
                   borderRadius: BorderRadius.circular(8),
                   onTap: () => setState(() => _expandedSections.add(title)),
                   child: Container(
@@ -424,6 +417,7 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
       itemBuilder: (context, index) {
         final video = videos[index];
         return InkWell(
+          mouseCursor: SystemMouseCursors.click,
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute<void>(
@@ -450,6 +444,60 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
           ),
         );
       },
+    );
+  }
+}
+
+class _MetadataTag extends StatefulWidget {
+  const _MetadataTag({required this.label, this.compact = false});
+
+  final String label;
+  final bool compact;
+
+  @override
+  State<_MetadataTag> createState() => _MetadataTagState();
+}
+
+class _MetadataTagState extends State<_MetadataTag> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final style = (theme.textTheme.bodyMedium ?? const TextStyle()).copyWith(
+      color: _hovered ? scheme.primary : null,
+    );
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: widget.compact
+          ? AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: _hovered ? scheme.primaryContainer : Colors.transparent,
+                border: Border.all(
+                  color: _hovered ? scheme.primary : scheme.outlineVariant,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                widget.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: style,
+              ),
+            )
+          : Chip(
+              mouseCursor: SystemMouseCursors.click,
+              label: Text(widget.label),
+              labelStyle: _hovered ? style : null,
+              backgroundColor: _hovered ? scheme.primaryContainer : null,
+              side: _hovered ? BorderSide(color: scheme.primary) : null,
+              visualDensity: VisualDensity.compact,
+            ),
     );
   }
 }

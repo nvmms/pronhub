@@ -41,6 +41,7 @@ class BrowseLayout extends StatelessWidget {
             return Padding(
               padding: const EdgeInsets.only(right: 8),
               child: ActionChip(
+                mouseCursor: SystemMouseCursors.click,
                 avatar: Icon(
                   action.icon,
                   size: 18,
@@ -60,6 +61,7 @@ class BrowseLayout extends StatelessWidget {
           return Material(
             color: Colors.transparent,
             child: ListTile(
+              mouseCursor: SystemMouseCursors.click,
               dense: true,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
               leading: Icon(action.icon, size: 20),

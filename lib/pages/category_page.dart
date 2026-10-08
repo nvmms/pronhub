@@ -155,6 +155,7 @@ class _CategoryPageState extends State<CategoryPage> {
                                   itemBuilder: (context, index) {
                                     final item = section.items[index];
                                     return InkWell(
+                                      mouseCursor: SystemMouseCursors.click,
                                       hoverColor: Colors.transparent,
                                       highlightColor: Colors.transparent,
                                       splashColor: Colors.transparent,
