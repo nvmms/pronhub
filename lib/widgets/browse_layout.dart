@@ -1,7 +1,13 @@
+import 'package:pronhub/extensions/build_context_extensions.dart';
 import 'package:flutter/material.dart';
 
 class BrowseAction {
-  const BrowseAction(this.label, this.icon, this.onTap, {this.selected = false});
+  const BrowseAction(
+    this.label,
+    this.icon,
+    this.onTap, {
+    this.selected = false,
+  });
 
   final String label;
   final IconData icon;
@@ -26,74 +32,109 @@ class BrowseLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return LayoutBuilder(builder: (context, constraints) {
-      final compact = constraints.maxWidth < 700;
-      Widget actionTile(BrowseAction action) {
-        if (compact) {
-          return Padding(
+    final showHeading = !context.isPhone;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = context.isPhone;
+        Widget actionTile(BrowseAction action) {
+          if (compact) {
+            return Padding(
               padding: const EdgeInsets.only(right: 8),
               child: ActionChip(
-                    avatar: Icon(action.icon, size: 18, color: action.selected ? scheme.onPrimaryContainer : scheme.onSurfaceVariant),
-                    label: Text(action.label),
-                    backgroundColor: action.selected ? scheme.primaryContainer : scheme.surfaceContainerLow,
-                    side: BorderSide.none,
-                    onPressed: action.onTap,
-                  ),
-            );
-        }
-        return Material(
-              color: Colors.transparent,
-              child: ListTile(
-                dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                leading: Icon(action.icon, size: 20),
-                title: Text(action.label),
-                selected: action.selected,
-                selectedColor: scheme.onPrimaryContainer,
-                selectedTileColor: scheme.primaryContainer,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                onTap: action.onTap,
+                avatar: Icon(
+                  action.icon,
+                  size: 18,
+                  color: action.selected
+                      ? scheme.onPrimaryContainer
+                      : scheme.onSurfaceVariant,
+                ),
+                label: Text(action.label),
+                backgroundColor: action.selected
+                    ? scheme.primaryContainer
+                    : scheme.surfaceContainerLow,
+                side: BorderSide.none,
+                onPressed: action.onTap,
               ),
             );
-      }
-      final navigation = [for (final action in actions) actionTile(action)];
-      final bottomNavigation = [
-        for (final action in bottomActions) actionTile(action),
-      ];
-      final heading = Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 16, 12),
-        child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-      );
-      if (compact) {
-        return Column(children: [
-          heading,
-          SizedBox(height: 54, child: ListView(scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16), children: [
-              ...navigation,
-              if (bottomNavigation.isNotEmpty) const SizedBox(width: 16),
-              ...bottomNavigation,
-            ])),
-          const SizedBox(height: 8),
-          Expanded(child: child),
-        ]);
-      }
-      return Row(children: [
-        Container(
-          width: 216,
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-          decoration: BoxDecoration(border: Border(right: BorderSide(color: scheme.outlineVariant))),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            heading,
-            Expanded(child: ListView(children: navigation)),
-            if (bottomNavigation.isNotEmpty) ...[
-              const Divider(),
-              ...bottomNavigation,
+          }
+          return Material(
+            color: Colors.transparent,
+            child: ListTile(
+              dense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              leading: Icon(action.icon, size: 20),
+              title: Text(action.label),
+              selected: action.selected,
+              selectedColor: scheme.onPrimaryContainer,
+              selectedTileColor: scheme.primaryContainer,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              onTap: action.onTap,
+            ),
+          );
+        }
+
+        final navigation = [for (final action in actions) actionTile(action)];
+        final bottomNavigation = [
+          for (final action in bottomActions) actionTile(action),
+        ];
+        final heading = Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 16, 12),
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+          ),
+        );
+        if (compact) {
+          return Column(
+            children: [
+              if (showHeading) heading,
+              SizedBox(
+                height: 54,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  children: [
+                    ...navigation,
+                    if (bottomNavigation.isNotEmpty) const SizedBox(width: 16),
+                    ...bottomNavigation,
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(child: child),
             ],
-          ]),
-        ),
-        Expanded(child: child),
-      ]);
-    });
+          );
+        }
+        return Row(
+          children: [
+            Container(
+              width: 216,
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              decoration: BoxDecoration(
+                border: Border(right: BorderSide(color: scheme.outlineVariant)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (showHeading) heading,
+                  Expanded(child: ListView(children: navigation)),
+                  if (bottomNavigation.isNotEmpty) ...[
+                    const Divider(),
+                    ...bottomNavigation,
+                  ],
+                ],
+              ),
+            ),
+            Expanded(child: child),
+          ],
+        );
+      },
+    );
   }
 }

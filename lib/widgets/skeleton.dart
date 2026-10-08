@@ -1,3 +1,4 @@
+import 'package:pronhub/extensions/build_context_extensions.dart';
 import 'package:flutter/material.dart';
 
 class SkeletonBox extends StatelessWidget {
@@ -25,8 +26,11 @@ class VideoSkeletonGrid extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       const spacing = 12.0;
-      final columns = (constraints.maxWidth / 250).floor().clamp(1, 6);
-      final cardWidth = (constraints.maxWidth - spacing * (columns + 1)) / columns;
+      final columns = context.isPhone
+          ? 2
+          : (constraints.maxWidth / 250).floor().clamp(1, 6);
+      final cardWidth =
+          (constraints.maxWidth - spacing * (columns + 1)) / columns;
       return GridView.builder(
         padding: const EdgeInsets.all(16),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -59,7 +63,9 @@ class CategorySkeletonGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final columns = (constraints.maxWidth / 190).floor().clamp(1, 6);
+      final columns = context.isPhone
+          ? 2
+          : (constraints.maxWidth / 190).floor().clamp(1, 6);
       return GridView.builder(
         padding: const EdgeInsets.all(12),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(

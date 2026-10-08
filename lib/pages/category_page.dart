@@ -1,3 +1,4 @@
+import 'package:pronhub/extensions/build_context_extensions.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:pronhub/models/category_item.dart';
@@ -76,6 +77,7 @@ class _CategoryPageState extends State<CategoryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: context.isPhone ? AppBar(title: const Text('所有分类')) : null,
       body: BrowseLayout(
         title: '所有分类',
         actions: [
@@ -84,126 +86,150 @@ class _CategoryPageState extends State<CategoryPage> {
             ('男同', '/gay/categories'),
             ('女女萨福系', '/lesbian/categories'),
           ])
-            BrowseAction(label, Icons.category_outlined,
-              () => _selectOrientation(path), selected: _uri.path == path),
+            BrowseAction(
+              label,
+              Icons.category_outlined,
+              () => _selectOrientation(path),
+              selected: _uri.path == path,
+            ),
         ],
         bottomActions: [
-          BrowseAction('返回', Icons.arrow_back_rounded, () => Navigator.pop(context)),
+          if (!context.isPhone)
+            BrowseAction(
+              '返回',
+              Icons.arrow_back_rounded,
+              () => Navigator.pop(context),
+            ),
         ],
         child: Column(
-              children: [
-                if (_loading) const LinearProgressIndicator(),
-                Expanded(
-                  child: _sections == null
-                      ? _error == null
-                            ? const CategorySkeletonGrid()
-                            : Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text('加载分类失败：$_error'),
-                                    TextButton(
-                                      onPressed: _load,
-                                      child: const Text('重试'),
-                                    ),
-                                  ],
-                                ),
-                              )
-                      : LayoutBuilder(
-                          builder: (context, constraints) {
-                            final columns = (constraints.maxWidth / 190)
-                                .floor()
-                                .clamp(1, 6);
-                            return ListView(
+          children: [
+            if (_loading) const LinearProgressIndicator(),
+            Expanded(
+              child: _sections == null
+                  ? _error == null
+                        ? const CategorySkeletonGrid()
+                        : Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                for (final section in _sections!)
-                                  if (section.items.isNotEmpty) ...[
-                                    Padding(
-                                      padding: const EdgeInsets.all(12),
-                                      child: Text(
-                                        section.title,
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.titleLarge,
+                                Text('加载分类失败：$_error'),
+                                TextButton(
+                                  onPressed: _load,
+                                  child: const Text('重试'),
+                                ),
+                              ],
+                            ),
+                          )
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        final columns = context.isPhone
+                            ? 2
+                            : (constraints.maxWidth / 190).floor().clamp(1, 6);
+                        return ListView(
+                          children: [
+                            for (final section in _sections!)
+                              if (section.items.isNotEmpty) ...[
+                                Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Text(
+                                    section.title,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleLarge,
+                                  ),
+                                ),
+                                GridView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                  ),
+                                  gridDelegate:
+                                      SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: columns,
+                                        crossAxisSpacing: 12,
+                                        mainAxisSpacing: 12,
+                                        mainAxisExtent: 155,
                                       ),
-                                    ),
-                                    GridView.builder(
-                                      shrinkWrap: true,
-                                      physics:
-                                          const NeverScrollableScrollPhysics(),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                      ),
-                                      gridDelegate:
-                                          SliverGridDelegateWithFixedCrossAxisCount(
-                                            crossAxisCount: columns,
-                                            crossAxisSpacing: 12,
-                                            mainAxisSpacing: 12,
-                                            mainAxisExtent: 155,
+                                  itemCount: section.items.length,
+                                  itemBuilder: (context, index) {
+                                    final item = section.items[index];
+                                    return InkWell(
+                                      hoverColor: Colors.transparent,
+                                      highlightColor: Colors.transparent,
+                                      splashColor: Colors.transparent,
+                                      onTap: () => _open(item),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(
+                                            child: item.image == null
+                                                ? ColoredBox(
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .surfaceContainerHighest,
+                                                  )
+                                                : CachedNetworkImage(
+                                                    imageUrl: item.image
+                                                        .toString(),
+                                                    cacheKey: imageCacheKey(
+                                                      item.image!,
+                                                    ),
+                                                    fit: BoxFit.cover,
+                                                    width: double.infinity,
+                                                    httpHeaders: {
+                                                      'Referer': _uri
+                                                          .toString(),
+                                                    },
+                                                    placeholder: (_, _) => ColoredBox(
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .surfaceContainerHighest,
+                                                    ),
+                                                    errorWidget: (_, _, _) =>
+                                                        ColoredBox(
+                                                          color: Theme.of(context)
+                                                              .colorScheme
+                                                              .surfaceContainerHighest,
+                                                        ),
+                                                  ),
                                           ),
-                                      itemCount: section.items.length,
-                                      itemBuilder: (context, index) {
-                                        final item = section.items[index];
-                                        return InkWell(
-                                          hoverColor: Colors.transparent,
-                                          highlightColor: Colors.transparent,
-                                          splashColor: Colors.transparent,
-                                          onTap: () => _open(item),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
+                                          const SizedBox(height: 6),
+                                          Row(
                                             children: [
                                               Expanded(
-                                                child: item.image == null
-                                                    ? ColoredBox(
-                                                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                                      )
-                                                    : CachedNetworkImage(
-                                                        imageUrl: item.image
-                                                            .toString(),
-                                                        cacheKey: imageCacheKey(
-                                                          item.image!,
-                                                        ),
-                                                        fit: BoxFit.cover,
-                                                        width: double.infinity,
-                                                        httpHeaders: {
-                                                          'Referer': _uri
-                                                              .toString(),
-                                                        },
-                                                        placeholder: (_, _) => ColoredBox(
-                                                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                                        ),
-                                                        errorWidget: (_, _, _) => ColoredBox(
-                                                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                                        ),
-                                                      ),
-                                              ),
-                                              const SizedBox(height: 6),
-                                              Row(children: [
-                                                Expanded(child: Text(
+                                                child: Text(
                                                   item.name,
                                                   maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                )),
-                                                if (item.count.isNotEmpty) ...[
-                                                  const SizedBox(width: 8),
-                                                  Text('${item.count} 视频',
-                                                    style: Theme.of(context).textTheme.bodySmall),
-                                                ],
-                                              ]),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              if (item.count.isNotEmpty) ...[
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  '${item.count} 视频',
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.bodySmall,
+                                                ),
+                                              ],
                                             ],
                                           ),
-                                        );
-                                      },
-                                    ),
-                                  ],
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
                               ],
-                            );
-                          },
-                        ),
-                ),
-              ],
+                          ],
+                        );
+                      },
+                    ),
             ),
+          ],
+        ),
       ),
     );
   }
@@ -215,6 +241,7 @@ class _CategoryLinkPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    appBar: context.isPhone ? AppBar(title: Text(item.name)) : null,
     body: VideoView(path: item.path, category: item),
   );
 }

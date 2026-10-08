@@ -1,4 +1,6 @@
+import 'package:pronhub/extensions/build_context_extensions.dart';
 import 'package:flutter/material.dart';
+import 'package:pronhub/services/orientation_policy.dart';
 import 'package:pronhub/models/category_item.dart';
 import 'package:pronhub/models/video_item.dart';
 import 'package:pronhub/models/sort_option.dart';
@@ -179,6 +181,7 @@ class _VideoViewState extends State<VideoView> {
   void _open(VideoItem item) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: OrientationPolicy.playbackRoute),
         builder: (_) => VideoDetailPage(video: item),
       ),
     );
@@ -217,7 +220,7 @@ class _VideoViewState extends State<VideoView> {
             ),
           ),
         ],
-        if (widget.path != '/video')
+        if (widget.path != '/video' && !context.isPhone)
           BrowseAction(
             '返回',
             Icons.arrow_back_rounded,
@@ -245,9 +248,9 @@ class _VideoViewState extends State<VideoView> {
                     child: LayoutBuilder(
                       builder: (context, constraints) {
                         const spacing = 12.0;
-                        final columns = (constraints.maxWidth / 250)
-                            .floor()
-                            .clamp(1, 6);
+                        final columns = context.isPhone
+                            ? 2
+                            : (constraints.maxWidth / 250).floor().clamp(1, 6);
                         final cardWidth =
                             (constraints.maxWidth - spacing * (columns + 1)) /
                             columns;

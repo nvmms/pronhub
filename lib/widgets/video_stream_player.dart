@@ -2,12 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pronhub/services/orientation_policy.dart';
 import 'package:pronhub/models/video_source.dart';
 import 'package:video_player/video_player.dart';
 
 class VideoStreamPlayer extends StatefulWidget {
-  const VideoStreamPlayer(
-      {super.key, required this.sources, required this.pageUrl});
+  const VideoStreamPlayer({
+    super.key,
+    required this.sources,
+    required this.pageUrl,
+  });
 
   final List<VideoSource> sources;
   final Uri pageUrl;
@@ -105,6 +109,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
     overlay.remove();
     overlay.dispose();
     _fullscreenOverlay = null;
+    OrientationPolicy.instance.exitFullscreen();
     unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
   }
 
@@ -128,21 +133,22 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
       return;
     }
     setState(() => _isFullscreen = true);
+    OrientationPolicy.instance.setFullscreen(context, true);
     unawaited(
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky));
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky),
+    );
     _fullscreenOverlay = OverlayEntry(
       builder: (context) => Positioned.fill(
-        child: Material(
-          color: Colors.black,
-          child: _fullscreenContent(),
-        ),
+        child: Material(color: Colors.black, child: _fullscreenContent()),
       ),
     );
     Overlay.of(context, rootOverlay: true).insert(_fullscreenOverlay!);
-    _fullscreenHistory = LocalHistoryEntry(onRemove: () {
-      _fullscreenHistory = null;
-      hideFullscreen();
-    });
+    _fullscreenHistory = LocalHistoryEntry(
+      onRemove: () {
+        _fullscreenHistory = null;
+        hideFullscreen();
+      },
+    );
     ModalRoute.of(context)?.addLocalHistoryEntry(_fullscreenHistory!);
   }
 
@@ -166,33 +172,43 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
     );
   }
 
-  Widget _fullscreenStatus(Widget child) => Stack(children: [
-        Center(child: child),
-        Positioned(
-          top: 16,
-          right: 16,
-          child: IconButton(
-            color: Colors.white,
-            tooltip: '退出全屏',
-            icon: const Icon(Icons.fullscreen_exit),
-            onPressed: hideFullscreen,
-          ),
+  Widget _fullscreenStatus(Widget child) => Stack(
+    children: [
+      Center(child: child),
+      Positioned(
+        top: 16,
+        right: 16,
+        child: IconButton(
+          color: Colors.white,
+          tooltip: '退出全屏',
+          icon: const Icon(Icons.fullscreen_exit),
+          onPressed: hideFullscreen,
         ),
-      ]);
+      ),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
     if (controller == null) {
       return const Center(
-          child: Text('没有可用的播放地址', style: TextStyle(color: Colors.white70)));
+        child: Text('没有可用的播放地址', style: TextStyle(color: Colors.white70)),
+      );
     }
     if (_error != null) {
       return Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('播放地址加载失败', style: TextStyle(color: Colors.white)),
-        TextButton(onPressed: () => _open(_selected!), child: const Text('重试')),
-      ]));
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('播放地址加载失败', style: TextStyle(color: Colors.white)),
+            TextButton(
+              onPressed: () => _open(_selected!),
+              child: const Text('重试'),
+            ),
+          ],
+        ),
+      );
     }
     if (!controller.value.isInitialized) {
       return const Center(child: CircularProgressIndicator());
@@ -232,48 +248,57 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
                   colors: [Colors.transparent, Colors.black87],
                 ),
               ),
-              child: Row(children: [
-                IconButton(
-                  color: Colors.white,
-                  icon: Icon(controller.value.isPlaying
-                      ? Icons.pause
-                      : Icons.play_arrow),
-                  onPressed: () => controller.value.isPlaying
-                      ? controller.pause()
-                      : controller.play(),
-                ),
-                Expanded(
-                  child: VideoProgressIndicator(
-                    controller,
-                    allowScrubbing: true,
-                    colors: const VideoProgressColors(
-                      playedColor: Colors.orange,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                DropdownButton<VideoSource>(
-                  value: _selected,
-                  dropdownColor: Colors.black87,
-                  style: const TextStyle(color: Colors.white),
-                  underline: const SizedBox.shrink(),
-                  items: [
-                    for (final source in widget.sources)
-                      DropdownMenuItem(
-                          value: source, child: Text(source.quality)),
-                  ],
-                  onChanged: (source) {
-                    if (source != null && source != _selected) _open(source);
-                  },
-                ),
-                if (fullscreen)
+              child: Row(
+                children: [
                   IconButton(
                     color: Colors.white,
-                    tooltip: '退出全屏',
-                    icon: const Icon(Icons.fullscreen_exit),
-                    onPressed: onFullscreenPressed,
+                    icon: Icon(
+                      controller.value.isPlaying
+                          ? Icons.pause
+                          : Icons.play_arrow,
+                    ),
+                    onPressed: () => controller.value.isPlaying
+                        ? controller.pause()
+                        : controller.play(),
                   ),
-              ]),
+                  Expanded(
+                    child: VideoProgressIndicator(
+                      controller,
+                      allowScrubbing: true,
+                      colors: const VideoProgressColors(
+                        playedColor: Colors.orange,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  DropdownButton<VideoSource>(
+                    value: _selected,
+                    dropdownColor: Colors.black87,
+                    style: const TextStyle(color: Colors.white),
+                    underline: const SizedBox.shrink(),
+                    items: [
+                      for (final source in widget.sources)
+                        DropdownMenuItem(
+                          value: source,
+                          child: Text(source.quality),
+                        ),
+                    ],
+                    onChanged: (source) {
+                      if (source != null && source != _selected) _open(source);
+                    },
+                  ),
+                  IconButton(
+                    color: Colors.white,
+                    tooltip: fullscreen ? '退出全屏' : '全屏播放',
+                    icon: Icon(
+                      fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                    ),
+                    onPressed: fullscreen
+                        ? onFullscreenPressed
+                        : showFullscreen,
+                  ),
+                ],
+              ),
             ),
           ),
         ],

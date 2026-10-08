@@ -1,14 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:pronhub/pages/home_page.dart';
+import 'package:pronhub/services/orientation_policy.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
+
+  static final _orientationPolicy = OrientationPolicy.instance;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Pronhub',
       debugShowCheckedModeBanner: false,
+      navigatorObservers: [_orientationPolicy],
+      builder: (context, child) {
+        _orientationPolicy.update(context);
+        return child!;
+      },
       themeMode: ThemeMode.system,
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),
