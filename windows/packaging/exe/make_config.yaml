@@ -1,0 +1,9 @@
+app_id: 64226D05-832E-49B0-A285-6374CFC02955
+display_name: pronhub
+executable_name: pronhub.exe
+create_desktop_icon: true
+launch_at_startup: false
+setup_icon_file: windows/runner/resources/app_icon.ico
+privileges_required: lowest
+locales:
+  - en
