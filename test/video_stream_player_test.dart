@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pronhub/models/video_source.dart';
 import 'package:pronhub/widgets/video_stream_player.dart';
@@ -60,6 +61,11 @@ void main() {
     tester,
   ) async {
     final platform = _PlayerPlatform();
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    tester.view.display.size = const Size(390, 844);
+    tester.view.display.devicePixelRatio = 1;
+    addTearDown(tester.view.display.reset);
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -171,11 +177,30 @@ void main() {
     expect(find.byTooltip('播放速度'), findsNothing);
     await tester.tap(find.byTooltip('解锁'));
     await tester.pump();
+    tester.view.display.size = const Size(1200, 800);
+    tester.view.physicalSize = const Size(1200, 800);
+    await tester.pump();
+    expect(find.byTooltip('锁定控制'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('fullscreen-volume-gesture')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('fullscreen-brightness-gesture')),
+      findsNothing,
+    );
+    expect(find.byTooltip('播放速度'), findsOneWidget);
+    expect(find.byTooltip('清晰度'), findsOneWidget);
+    final tabletVolume = platform.volume;
+    await tester.dragFrom(const Offset(1100, 400), const Offset(0, 80));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(platform.volume, tabletVolume);
     await tester.tap(find.byTooltip('退出全屏'));
     await tester.pump();
     expect(find.byTooltip('全屏播放'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
+    debugDefaultTargetPlatformOverride = null;
   });
 }

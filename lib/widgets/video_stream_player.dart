@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pronhub/extensions/build_context_extensions.dart';
 import 'package:pronhub/services/orientation_policy.dart';
 import 'package:pronhub/models/video_source.dart';
 import 'package:media_kit/media_kit.dart';
@@ -449,6 +450,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
     builder: (context, _) {
       final value = controller.state;
       final visible = _controlsVisible || !value.playing;
+      final phoneControls = fullscreen && context.isPhone;
       final duration = value.duration.inMilliseconds.toDouble();
       final position = value.position.inMilliseconds.toDouble().clamp(
         0.0,
@@ -479,7 +481,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
           children: [
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onVerticalDragStart: fullscreen && !_locked
+              onVerticalDragStart: phoneControls && !_locked
                   ? (details) => _startAdjustment(
                       details.localPosition.dx <
                               MediaQuery.sizeOf(context).width / 2
@@ -487,13 +489,13 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
                           : 'volume',
                     )
                   : null,
-              onVerticalDragUpdate: fullscreen && !_locked
+              onVerticalDragUpdate: phoneControls && !_locked
                   ? _dragAdjustment
                   : null,
-              onVerticalDragEnd: fullscreen && !_locked
+              onVerticalDragEnd: phoneControls && !_locked
                   ? (_) => _endAdjustment()
                   : null,
-              onVerticalDragCancel: fullscreen && !_locked
+              onVerticalDragCancel: phoneControls && !_locked
                   ? _endAdjustment
                   : null,
               onTap: () => _changeControls(() => _controlsVisible = !visible),
@@ -675,7 +677,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
                 ),
               ),
             ],
-            if (fullscreen && !_locked) ...[
+            if (phoneControls && !_locked) ...[
               if (visible || _adjustment == 'brightness')
                 Positioned(
                   left: 0,
@@ -693,7 +695,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
                   child: Center(child: _sideAdjustment('volume', controller)),
                 ),
             ],
-            if (fullscreen && visible)
+            if (phoneControls && visible)
               Positioned(
                 top: 100,
                 right: 12,
