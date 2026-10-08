@@ -8,7 +8,7 @@ import 'package:webview_all/webview_all.dart';
 ///
 /// Supports Android, iOS and Windows.
 class WebViewLoader {
-  static const _desktopUserAgent =
+  static const desktopUserAgent =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
       'AppleWebKit/537.36 (KHTML, like Gecko) '
       'Chrome/154.0.0.0 Safari/537.36';
@@ -43,7 +43,7 @@ class WebViewLoader {
 
       await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
 
-      await controller.setUserAgent(_desktopUserAgent);
+      await controller.setUserAgent(desktopUserAgent);
 
       await controller.setNavigationDelegate(
         NavigationDelegate(

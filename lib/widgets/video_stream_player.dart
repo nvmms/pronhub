@@ -1,12 +1,49 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pronhub/extensions/build_context_extensions.dart';
 import 'package:pronhub/services/orientation_policy.dart';
+import 'package:pronhub/services/webview_loader.dart';
 import 'package:pronhub/models/video_source.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+
+/// libmpv's network stack is separate from the WebView's network stack.
+@visibleForTesting
+String? windowsVideoProxy(Uri uri, Map<String, String> environment) {
+  final bypass = environment['no_proxy'] ?? environment['NO_PROXY'] ?? '';
+  for (final entry in bypass.split(',')) {
+    var host = entry.trim().toLowerCase();
+    if (host.isEmpty) continue;
+    if (host == '*') return null;
+    final portMatch = RegExp(r':(\d+)$').firstMatch(host);
+    if (portMatch != null) {
+      if (int.parse(portMatch.group(1)!) != uri.port) continue;
+      host = host.substring(0, portMatch.start);
+    }
+    if (host.startsWith('.')) host = host.substring(1);
+    if (uri.host.toLowerCase() == host ||
+        uri.host.toLowerCase().endsWith('.$host')) {
+      return null;
+    }
+  }
+  final keys = uri.scheme == 'https'
+      ? ['https_proxy', 'HTTPS_PROXY', 'http_proxy', 'HTTP_PROXY']
+      : ['http_proxy', 'HTTP_PROXY'];
+  for (final key in keys) {
+    final value = environment[key]?.trim();
+    if (value == null || value.isEmpty) continue;
+    final proxy = Uri.tryParse(value);
+    if (proxy != null &&
+        (proxy.scheme == 'http' || proxy.scheme == 'https') &&
+        proxy.host.isNotEmpty) {
+      return value;
+    }
+  }
+  return null;
+}
 
 class VideoStreamPlayer extends StatefulWidget {
   const VideoStreamPlayer({
@@ -16,11 +53,13 @@ class VideoStreamPlayer extends StatefulWidget {
     this.title = '',
     this.playerFactory,
     this.videoSurface,
+    this.refreshSources,
   });
 
   final List<VideoSource> sources;
   final Uri pageUrl;
   final String title;
+  final Future<List<VideoSource>> Function()? refreshSources;
   @visibleForTesting
   final Player Function()? playerFactory;
   @visibleForTesting
@@ -39,6 +78,11 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
   int _openRevision = 0;
   VideoSource? _selected;
   Object? _error;
+  late List<VideoSource> _sources;
+  Timer? _recoveryTimer;
+  bool _recoveryAttempted = false;
+  bool _refreshingSources = false;
+  Duration _lastPosition = Duration.zero;
   bool _isFullscreen = false;
   bool _disposing = false;
   OverlayEntry? _fullscreenOverlay;
@@ -196,15 +240,16 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
   }
 
   VideoSource _preferredSource() {
-    for (final source in widget.sources) {
+    for (final source in _sources) {
       if (source.quality == '720p') return source;
     }
-    return widget.sources.first;
+    return _sources.first;
   }
 
   @override
   void initState() {
     super.initState();
+    _sources = widget.sources;
     _controller = widget.playerFactory?.call() ?? Player();
     if (widget.videoSurface == null) {
       _videoController = VideoController(_controller);
@@ -217,7 +262,6 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
 
     for (final stream in <Stream<dynamic>>[
       _controller.stream.playing,
-      _controller.stream.position,
       _controller.stream.duration,
       _controller.stream.buffering,
       _controller.stream.volume,
@@ -225,10 +269,21 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
       _subscriptions.add(stream.listen(update));
     }
     _subscriptions.add(
+      _controller.stream.position.listen((position) {
+        if (!mounted || _disposing) return;
+        if (position > _lastPosition && !_refreshingSources) {
+          _error = null;
+          _recoveryTimer?.cancel();
+        }
+        _lastPosition = position;
+        update(position);
+      }),
+    );
+    _subscriptions.add(
       _controller.stream.error.listen((error) {
         if (!mounted || _disposing) return;
-        setState(() => _error = error);
-        _fullscreenRevision.value++;
+        debugPrint('VideoStreamPlayer: $error');
+        _handleError(error);
       }),
     );
     if (widget.sources.isNotEmpty) {
@@ -239,6 +294,9 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
   @override
   void didUpdateWidget(covariant VideoStreamPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.sources, widget.sources)) {
+      _sources = widget.sources;
+    }
     if (widget.sources.isNotEmpty &&
         (oldWidget.sources.isEmpty ||
             oldWidget.sources.first.url != widget.sources.first.url)) {
@@ -246,10 +304,61 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
     }
   }
 
-  Future<void> _open(VideoSource source) {
+  void _handleError(Object error) {
+    setState(() => _error = error);
+    _fullscreenRevision.value++;
+    if (widget.refreshSources != null &&
+        !_recoveryAttempted &&
+        !_refreshingSources) {
+      _recoveryAttempted = true;
+      _recoveryTimer = Timer(const Duration(seconds: 1), () {
+        if (mounted && !_disposing) unawaited(_retry(automatic: true));
+      });
+    }
+  }
+
+  Future<void> _retry({bool automatic = false}) async {
+    if (_refreshingSources || _disposing) return;
+    _recoveryTimer?.cancel();
+    final refresh = widget.refreshSources;
+    if (refresh == null) return _open(_selected!);
+    final revision = _openRevision;
+    final quality = _selected?.quality;
+    setState(() {
+      _refreshingSources = true;
+      _error = null;
+    });
+    _fullscreenRevision.value++;
+    try {
+      final sources = await refresh();
+      if (!mounted || _disposing || revision != _openRevision) return;
+      if (sources.isEmpty) throw StateError('没有可用的播放地址');
+      _sources = sources;
+      final source = sources.where((source) => source.quality == quality);
+      await _open(
+        source.isEmpty ? _preferredSource() : source.first,
+        resetRecovery: !automatic,
+      );
+    } catch (error) {
+      if (mounted && !_disposing && revision == _openRevision) {
+        debugPrint('VideoStreamPlayer refresh: $error');
+        setState(() => _error = error);
+      }
+    } finally {
+      if (mounted && !_disposing) {
+        setState(() => _refreshingSources = false);
+        _fullscreenRevision.value++;
+      }
+    }
+  }
+
+  Future<void> _open(VideoSource source, {bool resetRecovery = true}) {
+    _recoveryTimer?.cancel();
+    if (resetRecovery) _recoveryAttempted = false;
     final revision = ++_openRevision;
     final resumePlaying = !_ready || _controller.state.playing;
     final resumePosition = _ready ? _controller.state.position : Duration.zero;
+    _lastPosition = resumePosition;
     setState(() {
       _selected = source;
       _ready = false;
@@ -259,10 +368,19 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
     return _openQueue = _openQueue.then((_) async {
       if (_disposing || revision != _openRevision) return;
       try {
+        final native = _controller.platform;
+        if (Platform.isWindows && native is NativePlayer) {
+          final proxy = windowsVideoProxy(source.url, Platform.environment);
+          await native.setProperty('http-proxy', proxy ?? '');
+        }
+        if (_disposing || revision != _openRevision) return;
         await _controller.open(
           Media(
             source.url.toString(),
-            httpHeaders: {'Referer': widget.pageUrl.toString()},
+            httpHeaders: {
+              'Referer': widget.pageUrl.toString(),
+              'User-Agent': WebViewLoader.desktopUserAgent,
+            },
             start: resumePosition,
           ),
           play: resumePlaying,
@@ -274,9 +392,9 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
         _fullscreenRevision.value++;
         _refreshControls();
       } catch (error) {
+        debugPrint('VideoStreamPlayer: $error');
         if (mounted && !_disposing && revision == _openRevision) {
-          setState(() => _error = error);
-          _fullscreenRevision.value++;
+          _handleError(error);
         }
       }
     });
@@ -285,6 +403,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
   @override
   void dispose() {
     _disposing = true;
+    _recoveryTimer?.cancel();
     _controlsTimer?.cancel();
     _adjustmentTimer?.cancel();
     final history = _fullscreenHistory;
@@ -369,13 +488,10 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
     final controller = _controller;
     if (_error != null) {
       return _fullscreenStatus(
-        TextButton(
-          onPressed: () => _open(_selected!),
-          child: const Text('播放地址加载失败，点击重试'),
-        ),
+        TextButton(onPressed: _retry, child: const Text('播放地址加载失败，点击重试')),
       );
     }
-    if (!_ready) {
+    if (!_ready || _refreshingSources) {
       return _fullscreenStatus(const CircularProgressIndicator());
     }
     return _playerSurface(
@@ -415,15 +531,21 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text('播放地址加载失败', style: TextStyle(color: Colors.white)),
-            TextButton(
-              onPressed: () => _open(_selected!),
-              child: const Text('重试'),
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Text(
+                '$_error',
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
             ),
+            TextButton(onPressed: _retry, child: const Text('重试')),
           ],
         ),
       );
     }
-    if (!_ready) {
+    if (!_ready || _refreshingSources) {
       return const Center(child: CircularProgressIndicator());
     }
     if (_isFullscreen) return const ColoredBox(color: Colors.black);
@@ -652,7 +774,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
                             _refreshControls();
                           },
                           itemBuilder: (_) => [
-                            for (final source in widget.sources)
+                            for (final source in _sources)
                               PopupMenuItem(
                                 value: source,
                                 child: Text(source.quality),

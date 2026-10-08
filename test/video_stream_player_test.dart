@@ -13,6 +13,8 @@ class _PlayerPlatform extends PlatformPlayer {
   Duration get position => state.position;
   Media? media;
 
+  void emitError(String error) => errorController.add(error);
+
   @override
   Future<void> open(Playable playable, {bool play = true}) async {
     media = playable as Media;
@@ -57,6 +59,93 @@ class _PlayerPlatform extends PlatformPlayer {
 }
 
 void main() {
+  testWidgets('failed open refreshes once and resumed progress clears errors', (
+    tester,
+  ) async {
+    final platform = _PlayerPlatform();
+    var refreshes = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoStreamPlayer(
+            playerFactory: () => Player(platformPlayer: platform),
+            videoSurface: const SizedBox(),
+            sources: [
+              VideoSource(
+                url: Uri.parse('https://example.com/old.m3u8'),
+                quality: '720p',
+              ),
+            ],
+            pageUrl: Uri.parse('https://example.com/video'),
+            refreshSources: () async {
+              refreshes++;
+              return [
+                VideoSource(
+                  url: Uri.parse('https://example.com/fresh.m3u8'),
+                  quality: '720p',
+                ),
+              ];
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    platform.emitError('Failed to open old.m3u8');
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    await tester.pump();
+    expect(refreshes, 1);
+    expect(platform.media!.uri, 'https://example.com/fresh.m3u8');
+    platform.emitError('Failed to open fresh.m3u8');
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+    expect(refreshes, 1);
+    expect(find.text('Failed to open fresh.m3u8'), findsOneWidget);
+    await platform.seek(const Duration(seconds: 1));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Failed to open fresh.m3u8'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+
+  test('Windows video proxy honors HTTPS configuration and bypasses', () {
+    final environment = {
+      'HTTPS_PROXY': 'http://127.0.0.1:7897',
+      'HTTP_PROXY': 'http://127.0.0.1:7890',
+      'NO_PROXY': 'localhost,.example.com,private.test:8443',
+    };
+    expect(
+      windowsVideoProxy(Uri.parse('https://cdn.test/video.m3u8'), environment),
+      'http://127.0.0.1:7897',
+    );
+    expect(
+      windowsVideoProxy(
+        Uri.parse('https://cdn.example.com/video'),
+        environment,
+      ),
+      isNull,
+    );
+    expect(
+      windowsVideoProxy(
+        Uri.parse('https://private.test:8443/video'),
+        environment,
+      ),
+      isNull,
+    );
+    expect(
+      windowsVideoProxy(Uri.parse('https://private.test/video'), environment),
+      'http://127.0.0.1:7897',
+    );
+    expect(
+      windowsVideoProxy(Uri.parse('https://cdn.test/video'), {'NO_PROXY': '*'}),
+      isNull,
+    );
+  });
+
   testWidgets('portrait and fullscreen controls, locking, speed and seeking', (
     tester,
   ) async {
@@ -105,6 +194,15 @@ void main() {
       'https://example.com/video',
     );
     expect(find.byTooltip('暂停'), findsOneWidget);
+    expect(platform.media!.httpHeaders?['User-Agent'], contains('Mozilla/5.0'));
+    platform.emitError('HTTP error 403 Forbidden');
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('HTTP error 403 Forbidden'), findsOneWidget);
+    await tester.tap(find.text('重试'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('HTTP error 403 Forbidden'), findsNothing);
     expect(find.byTooltip('全屏播放'), findsOneWidget);
     expect(find.byTooltip('播放速度'), findsNothing);
     expect(tester.takeException(), isNull);
