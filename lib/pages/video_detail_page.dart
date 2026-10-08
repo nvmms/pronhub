@@ -56,19 +56,20 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
                 Stack(
                   children: [
                     _player(snapshot.data),
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: IconButton(
-                        tooltip: '返回',
-                        style: IconButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          backgroundColor: Colors.black54,
+                    if (snapshot.data == null)
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: IconButton(
+                          tooltip: '返回',
+                          style: IconButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            backgroundColor: Colors.black54,
+                          ),
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.arrow_back),
                         ),
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.arrow_back),
                       ),
-                    ),
                   ],
                 ),
                 Expanded(
@@ -191,6 +192,7 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
               key: _playerKey,
               sources: detail.sources,
               pageUrl: widget.video.url,
+              title: detail.title.isEmpty ? widget.video.title : detail.title,
             ),
     ),
   );

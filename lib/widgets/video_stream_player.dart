@@ -11,10 +11,12 @@ class VideoStreamPlayer extends StatefulWidget {
     super.key,
     required this.sources,
     required this.pageUrl,
+    this.title = '',
   });
 
   final List<VideoSource> sources;
   final Uri pageUrl;
+  final String title;
 
   @override
   State<VideoStreamPlayer> createState() => VideoStreamPlayerState();
@@ -28,6 +30,153 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
   bool _disposing = false;
   OverlayEntry? _fullscreenOverlay;
   LocalHistoryEntry? _fullscreenHistory;
+  final _fullscreenRevision = ValueNotifier<int>(0);
+  Timer? _controlsTimer;
+  Timer? _adjustmentTimer;
+  bool _controlsVisible = true;
+  bool _locked = false;
+  String? _adjustment;
+  double _brightness = 1;
+  double _speed = 1;
+
+  void _startAdjustment(String kind) {
+    _adjustmentTimer?.cancel();
+    _controlsTimer?.cancel();
+    setState(() {
+      _adjustment = kind;
+    });
+    _fullscreenRevision.value++;
+  }
+
+  void _dragAdjustment(DragUpdateDetails details) {
+    final controller = _controller;
+    if (controller == null || _adjustment == null) return;
+    final change = -details.delta.dy / 200;
+    if (_adjustment == 'brightness') {
+      setState(() => _brightness = (_brightness + change).clamp(.2, 1.0));
+    } else {
+      controller.setVolume((controller.value.volume + change).clamp(0.0, 1.0));
+    }
+    _fullscreenRevision.value++;
+  }
+
+  void _endAdjustment() {
+    _adjustmentTimer?.cancel();
+    _adjustmentTimer = Timer(const Duration(milliseconds: 900), () {
+      if (!mounted) return;
+      setState(() => _adjustment = null);
+      _fullscreenRevision.value++;
+    });
+    _refreshControls();
+  }
+
+  Widget _sideAdjustment(String kind, VideoPlayerController controller) {
+    final active = _adjustment == kind;
+    final brightness = kind == 'brightness';
+    final level = brightness
+        ? (_brightness - .2) / .8
+        : controller.value.volume;
+    final icon = brightness
+        ? Icons.brightness_6_outlined
+        : (controller.value.volume == 0
+              ? Icons.volume_off_outlined
+              : Icons.volume_up_outlined);
+    return Semantics(
+      label: brightness ? '画面亮度，上下滑动调节' : '音量，上下滑动调节',
+      value: '${(level * 100).round()}%',
+      child: GestureDetector(
+        key: ValueKey('fullscreen-$kind-gesture'),
+        behavior: HitTestBehavior.opaque,
+        onVerticalDragStart: (_) => _startAdjustment(kind),
+        onVerticalDragUpdate: _dragAdjustment,
+        onVerticalDragEnd: (_) => _endAdjustment(),
+        onVerticalDragCancel: _endAdjustment,
+        onTap: () {
+          _startAdjustment(kind);
+          _endAdjustment();
+        },
+        child: SizedBox(
+          width: 100,
+          height: 220,
+          child: active
+              ? Row(
+                  textDirection: brightness ? TextDirection.ltr : TextDirection.rtl,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.arrow_drop_up, color: Colors.white),
+                        Container(
+                          width: 46,
+                          height: 82,
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(28),
+                            border: Border.all(color: Colors.white24),
+                          ),
+                          child: Icon(icon, color: Colors.white, size: 24),
+                        ),
+                        const Icon(Icons.arrow_drop_down, color: Colors.white),
+                      ],
+                    ),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 3,
+                      height: 190,
+                      child: Stack(
+                        alignment: Alignment.bottomCenter,
+                        children: [
+                          Container(color: Colors.white24),
+                          FractionallySizedBox(
+                            heightFactor: level,
+                            child: Container(color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                )
+              : Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: const BoxDecoration(
+                      color: Colors.black38,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, color: Colors.white, size: 22),
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+
+  void _refreshControls() {
+    _controlsTimer?.cancel();
+    if (_controller?.value.isPlaying != true) return;
+    _controlsTimer = Timer(const Duration(seconds: 4), () {
+      if (!mounted) return;
+      setState(() {
+        _controlsVisible = false;
+        _adjustment = null;
+      });
+      _fullscreenRevision.value++;
+    });
+  }
+
+  void _changeControls(VoidCallback change) {
+    setState(change);
+    _fullscreenRevision.value++;
+    _refreshControls();
+  }
+
+  String _time(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = (duration.inMinutes % 60).toString().padLeft(2, '0');
+    final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
+    return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
+  }
 
   VideoSource _preferredSource() {
     for (final source in widget.sources) {
@@ -56,6 +205,8 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
 
   Future<void> _open(VideoSource source) async {
     final previous = _controller;
+    final resumePlaying = previous?.value.isPlaying ?? true;
+    final volume = previous?.value.volume ?? 1.0;
     final resumePosition = previous?.value.isInitialized == true
         ? previous!.value.position
         : Duration.zero;
@@ -69,7 +220,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
       _controller = controller;
       _error = null;
     });
-    _fullscreenOverlay?.markNeedsBuild();
+    _fullscreenRevision.value++;
     if (previous != null) await previous.dispose();
     try {
       await controller.initialize();
@@ -82,12 +233,15 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
       }
       if (!mounted || !identical(_controller, controller)) return;
       setState(() {});
-      _fullscreenOverlay?.markNeedsBuild();
-      await controller.play();
+      _fullscreenRevision.value++;
+      await controller.setVolume(volume);
+      if (resumePlaying) await controller.play();
+      await controller.setPlaybackSpeed(_speed);
+      _refreshControls();
     } catch (error) {
       if (mounted && identical(_controller, controller)) {
         setState(() => _error = error);
-        _fullscreenOverlay?.markNeedsBuild();
+        _fullscreenRevision.value++;
       }
     }
   }
@@ -95,11 +249,14 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
   @override
   void dispose() {
     _disposing = true;
+    _controlsTimer?.cancel();
+    _adjustmentTimer?.cancel();
     final history = _fullscreenHistory;
     _fullscreenHistory = null;
     history?.remove();
     _removeFullscreenOverlay();
     _controller?.dispose();
+    _fullscreenRevision.dispose();
     super.dispose();
   }
 
@@ -122,7 +279,13 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
       return;
     }
     _removeFullscreenOverlay();
-    setState(() => _isFullscreen = false);
+    setState(() {
+      _isFullscreen = false;
+      _locked = false;
+      _controlsVisible = true;
+      _adjustment = null;
+    });
+    _refreshControls();
   }
 
   void showFullscreen() {
@@ -132,14 +295,28 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
         _isFullscreen) {
       return;
     }
-    setState(() => _isFullscreen = true);
+    setState(() {
+      _isFullscreen = true;
+      _controlsVisible = true;
+    });
+    _refreshControls();
     OrientationPolicy.instance.setFullscreen(context, true);
     unawaited(
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky),
     );
     _fullscreenOverlay = OverlayEntry(
       builder: (context) => Positioned.fill(
-        child: Material(color: Colors.black, child: _fullscreenContent()),
+        child: Navigator(
+          onGenerateRoute: (_) => MaterialPageRoute<void>(
+            builder: (_) => Material(
+              color: Colors.black,
+              child: ValueListenableBuilder<int>(
+                valueListenable: _fullscreenRevision,
+                builder: (_, _, _) => _fullscreenContent(),
+              ),
+            ),
+          ),
+        ),
       ),
     );
     Overlay.of(context, rootOverlay: true).insert(_fullscreenOverlay!);
@@ -217,92 +394,288 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> {
     return _playerSurface(controller);
   }
 
+  Widget _roundButton(IconData icon, String tooltip, VoidCallback onTap) =>
+      IconButton(
+        tooltip: tooltip,
+        style: IconButton.styleFrom(
+          foregroundColor: Colors.white,
+          backgroundColor: Colors.white.withValues(alpha: .16),
+        ),
+        onPressed: onTap,
+        icon: Icon(icon),
+      );
+
   Widget _playerSurface(
     VideoPlayerController controller, {
     bool fullscreen = false,
     VoidCallback? onFullscreenPressed,
-  }) {
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) => Stack(
-        fit: StackFit.expand,
-        children: [
-          Center(
-            child: AspectRatio(
-              aspectRatio: controller.value.aspectRatio,
-              child: VideoPlayer(controller),
-            ),
-          ),
-          if (controller.value.isBuffering)
-            const Center(child: CircularProgressIndicator()),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black87],
-                ),
-              ),
-              child: Row(
-                children: [
-                  IconButton(
-                    color: Colors.white,
-                    icon: Icon(
-                      controller.value.isPlaying
-                          ? Icons.pause
-                          : Icons.play_arrow,
-                    ),
-                    onPressed: () => controller.value.isPlaying
-                        ? controller.pause()
-                        : controller.play(),
-                  ),
-                  Expanded(
-                    child: VideoProgressIndicator(
-                      controller,
-                      allowScrubbing: true,
-                      colors: const VideoProgressColors(
-                        playedColor: Colors.orange,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  DropdownButton<VideoSource>(
-                    value: _selected,
-                    dropdownColor: Colors.black87,
-                    style: const TextStyle(color: Colors.white),
-                    underline: const SizedBox.shrink(),
-                    items: [
-                      for (final source in widget.sources)
-                        DropdownMenuItem(
-                          value: source,
-                          child: Text(source.quality),
-                        ),
-                    ],
-                    onChanged: (source) {
-                      if (source != null && source != _selected) _open(source);
+  }) => AnimatedBuilder(
+    animation: controller,
+    builder: (context, _) {
+      final value = controller.value;
+      final visible = _controlsVisible || !value.isPlaying;
+      final duration = value.duration.inMilliseconds.toDouble();
+      final position = value.position.inMilliseconds.toDouble().clamp(
+        0.0,
+        duration,
+      );
+      final progress = SliderTheme(
+        data: SliderTheme.of(context).copyWith(
+          trackHeight: 2,
+          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
+          overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+          activeTrackColor: Colors.white,
+          inactiveTrackColor: Colors.white38,
+          thumbColor: Colors.white,
+        ),
+        child: Slider(
+          value: position,
+          max: duration > 0 ? duration : 1,
+          onChangeStart: (_) => _controlsTimer?.cancel(),
+          onChanged: (milliseconds) =>
+              controller.seekTo(Duration(milliseconds: milliseconds.round())),
+          onChangeEnd: (_) => _refreshControls(),
+        ),
+      );
+      return DefaultTextStyle(
+        style: const TextStyle(color: Colors.white, fontSize: 13),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onVerticalDragStart: fullscreen && !_locked
+                  ? (details) => _startAdjustment(
+                      details.localPosition.dx <
+                              MediaQuery.sizeOf(context).width / 2
+                          ? 'brightness'
+                          : 'volume',
+                    )
+                  : null,
+              onVerticalDragUpdate: fullscreen && !_locked
+                  ? _dragAdjustment
+                  : null,
+              onVerticalDragEnd: fullscreen && !_locked
+                  ? (_) => _endAdjustment()
+                  : null,
+              onVerticalDragCancel: fullscreen && !_locked
+                  ? _endAdjustment
+                  : null,
+              onTap: () => _changeControls(() => _controlsVisible = !visible),
+              onDoubleTap: _locked
+                  ? null
+                  : () {
+                      value.isPlaying ? controller.pause() : controller.play();
+                      _changeControls(() => _controlsVisible = true);
                     },
-                  ),
-                  IconButton(
-                    color: Colors.white,
-                    tooltip: fullscreen ? '退出全屏' : '全屏播放',
-                    icon: Icon(
-                      fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Center(
+                    child: AspectRatio(
+                      aspectRatio: value.aspectRatio,
+                      child: VideoPlayer(controller),
                     ),
-                    onPressed: fullscreen
-                        ? onFullscreenPressed
-                        : showFullscreen,
+                  ),
+                  IgnorePointer(
+                    child: ColoredBox(
+                      color: Colors.black.withValues(alpha: 1 - _brightness),
+                    ),
                   ),
                 ],
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
+            if (value.isBuffering)
+              const IgnorePointer(
+                child: Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                ),
+              ),
+            if (visible && !_locked) ...[
+              IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black45,
+                        Colors.transparent,
+                        Colors.black54,
+                      ],
+                      stops: const [0, .45, 1],
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: fullscreen ? 16 : 4,
+                left: 4,
+                right: 60,
+                child: SafeArea(
+                  bottom: false,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          IconButton(
+                            color: Colors.white,
+                            tooltip: fullscreen ? '退出全屏' : '返回',
+                            icon: const Icon(
+                              Icons.arrow_back_ios_new,
+                              size: 22,
+                            ),
+                            onPressed: fullscreen
+                                ? onFullscreenPressed
+                                : () => Navigator.maybePop(context),
+                          ),
+                          if (fullscreen)
+                            Expanded(
+                              child: Text(
+                                widget.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: value.isPlaying ? '暂停' : '播放',
+                      iconSize: 60,
+                      color: Colors.white,
+                      icon: Icon(
+                        value.isPlaying
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                      ),
+                      onPressed: () {
+                        value.isPlaying
+                            ? controller.pause()
+                            : controller.play();
+                        _changeControls(() => _controlsVisible = true);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: fullscreen ? 8 : 0,
+                child: SafeArea(
+                  top: false,
+                  child: Row(
+                    children: [
+                      Text(
+                        fullscreen
+                            ? '${_time(value.position)} / ${_time(value.duration)}'
+                            : _time(value.position),
+                      ),
+                      Expanded(child: progress),
+                      if (fullscreen) ...[
+                        PopupMenuButton<double>(
+                          tooltip: '播放速度',
+                          initialValue: _speed,
+                          onOpened: () => _controlsTimer?.cancel(),
+                          onCanceled: _refreshControls,
+                          onSelected: (speed) {
+                            controller.setPlaybackSpeed(speed);
+                            _changeControls(() => _speed = speed);
+                          },
+                          itemBuilder: (_) => [
+                            for (final speed in [.5, .75, 1.0, 1.25, 1.5, 2.0])
+                              PopupMenuItem(
+                                value: speed,
+                                child: Text('${speed}x'),
+                              ),
+                          ],
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Text(_speed == 1 ? '倍速' : '${_speed}x'),
+                          ),
+                        ),
+                        PopupMenuButton<VideoSource>(
+                          tooltip: '清晰度',
+                          initialValue: _selected,
+                          onOpened: () => _controlsTimer?.cancel(),
+                          onCanceled: _refreshControls,
+                          onSelected: (source) {
+                            if (source != _selected) _open(source);
+                            _refreshControls();
+                          },
+                          itemBuilder: (_) => [
+                            for (final source in widget.sources)
+                              PopupMenuItem(
+                                value: source,
+                                child: Text(source.quality),
+                              ),
+                          ],
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Text(_selected?.quality ?? '清晰度'),
+                          ),
+                        ),
+                      ] else ...[
+                        Text(_time(value.duration)),
+                        IconButton(
+                          color: Colors.white,
+                          tooltip: '全屏播放',
+                          icon: const Icon(Icons.screen_rotation_rounded),
+                          onPressed: showFullscreen,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            if (fullscreen && !_locked) ...[
+              if (visible || _adjustment == 'brightness')
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: _sideAdjustment('brightness', controller),
+                  ),
+                ),
+              if (visible || _adjustment == 'volume')
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(child: _sideAdjustment('volume', controller)),
+                ),
+            ],
+            if (fullscreen && visible)
+              Positioned(
+                top: 100,
+                right: 12,
+                child: _roundButton(
+                  _locked ? Icons.lock_outline : Icons.lock_open_outlined,
+                  _locked ? '解锁' : '锁定控制',
+                  () => _changeControls(() {
+                    _locked = !_locked;
+                    _adjustment = null;
+                  }),
+                ),
+              ),
+          ],
+        ),
+      );
+    },
+  );
 }
