@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -16,11 +18,16 @@ class _PlayerPlatform extends PlatformPlayer {
   double get volume => state.volume / 100;
   Duration get position => state.position;
   Media? media;
+  Completer<void>? openGate;
+  final openPlayFlags = <bool>[];
+  int playCalls = 0;
 
   void emitError(String error) => errorController.add(error);
 
   @override
   Future<void> open(Playable playable, {bool play = true}) async {
+    openPlayFlags.add(play);
+    await openGate?.future;
     media = playable as Media;
     state = state.copyWith(
       playing: play,
@@ -33,6 +40,7 @@ class _PlayerPlatform extends PlatformPlayer {
 
   @override
   Future<void> play() async {
+    playCalls++;
     state = state.copyWith(playing: true);
     playingController.add(true);
   }
@@ -63,6 +71,106 @@ class _PlayerPlatform extends PlatformPlayer {
 }
 
 void main() {
+  testWidgets('loading player stays paused after leaving its route', (
+    tester,
+  ) async {
+    final platform = _PlayerPlatform()..openGate = Completer<void>();
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        navigatorObservers: [playbackRouteObserver],
+        home: Scaffold(
+          body: VideoStreamPlayer(
+            playerFactory: () => Player(platformPlayer: platform),
+            videoSurface: const SizedBox(),
+            sources: [
+              VideoSource(
+                url: Uri.parse('https://example.com/video.m3u8'),
+                quality: '720p',
+              ),
+            ],
+            pageUrl: Uri.parse('https://example.com/video'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(platform.openPlayFlags, [false]);
+    navigatorKey.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => const Scaffold()),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    platform.openGate!.complete();
+    await tester.pumpAndSettle();
+    expect(platform.state.playing, isFalse);
+    expect(platform.playCalls, 0);
+    navigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(platform.state.playing, isTrue);
+    await platform.pause();
+    navigatorKey.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => const Scaffold()),
+    );
+    await tester.pumpAndSettle();
+    navigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(platform.state.playing, isFalse);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+
+  testWidgets('player created beneath another route does not autoplay', (
+    tester,
+  ) async {
+    final platform = _PlayerPlatform()..openGate = Completer<void>();
+    final navigatorKey = GlobalKey<NavigatorState>();
+    final loaded = ValueNotifier<bool>(false);
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        navigatorObservers: [playbackRouteObserver],
+        home: Scaffold(
+          body: ValueListenableBuilder<bool>(
+            valueListenable: loaded,
+            builder: (context, ready, child) => ready
+                ? VideoStreamPlayer(
+                    playerFactory: () => Player(platformPlayer: platform),
+                    videoSurface: const SizedBox(),
+                    sources: [
+                      VideoSource(
+                        url: Uri.parse('https://example.com/video.m3u8'),
+                        quality: '720p',
+                      ),
+                    ],
+                    pageUrl: Uri.parse('https://example.com/video'),
+                  )
+                : const SizedBox(),
+          ),
+        ),
+      ),
+    );
+    navigatorKey.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => const Scaffold()),
+    );
+    await tester.pumpAndSettle();
+    loaded.value = true;
+    await tester.pump();
+    await tester.pump();
+    expect(platform.openPlayFlags, [false]);
+    navigatorKey.currentState!.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    platform.openGate!.complete();
+    await tester.pumpAndSettle();
+    expect(platform.playCalls, 1);
+    expect(platform.state.playing, isTrue);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    loaded.dispose();
+  });
+
   testWidgets('mouse reveals controls and keeps hovered controls visible', (
     tester,
   ) async {
@@ -166,7 +274,7 @@ void main() {
     expect(platform.state.playing, isFalse);
     navigatorKey.currentState!.pop();
     await tester.pumpAndSettle();
-    expect(platform.state.playing, isFalse);
+    expect(platform.state.playing, isTrue);
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
     debugDefaultTargetPlatformOverride = null;

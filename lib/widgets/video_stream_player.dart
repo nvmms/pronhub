@@ -74,6 +74,11 @@ class VideoStreamPlayer extends StatefulWidget {
 class VideoStreamPlayerState extends State<VideoStreamPlayer> with RouteAware {
   PageRoute<dynamic>? _route;
   bool _routeCovered = false;
+  int _visibilityRevision = 0;
+  bool _resumeOnReturn = false;
+
+  bool get _canPlay =>
+      mounted && !_disposing && !_routeCovered && (_route?.isCurrent ?? true);
 
   @override
   void didChangeDependencies() {
@@ -82,19 +87,40 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> with RouteAware {
     if (route is PageRoute<dynamic> && route != _route) {
       playbackRouteObserver.unsubscribe(this);
       _route = route;
+      _routeCovered = !route.isCurrent;
+      if (_routeCovered) {
+        _visibilityRevision++;
+        _resumeOnReturn = _selected != null;
+      }
       playbackRouteObserver.subscribe(this, route);
     }
   }
 
   @override
   void didPushNext() {
+    _resumeOnReturn =
+        _resumeOnReturn ||
+        _controller.state.playing ||
+        (!_ready && _selected != null);
     _routeCovered = true;
+    _visibilityRevision++;
     unawaited(_controller.pause());
   }
 
   @override
   void didPopNext() {
     _routeCovered = false;
+    if (_resumeOnReturn && _ready) unawaited(_playIfCurrent());
+  }
+
+  Future<void> _playIfCurrent() async {
+    if (!_canPlay) return;
+    final visibilityRevision = _visibilityRevision;
+    _resumeOnReturn = false;
+    await _controller.play();
+    if (!_canPlay || visibilityRevision != _visibilityRevision) {
+      await _controller.pause();
+    }
   }
 
   late final Player _controller;
@@ -439,7 +465,9 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> with RouteAware {
     _recoveryTimer?.cancel();
     if (resetRecovery) _recoveryAttempted = false;
     final revision = ++_openRevision;
-    final resumePlaying = !_ready || _controller.state.playing;
+    final visibilityRevision = _visibilityRevision;
+    final resumePlaying = _canPlay && (!_ready || _controller.state.playing);
+    if (!_canPlay && !_ready) _resumeOnReturn = true;
     final resumePosition = _ready ? _controller.state.position : Duration.zero;
     _lastPosition = resumePosition;
     setState(() {
@@ -466,11 +494,16 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> with RouteAware {
             },
             start: resumePosition,
           ),
-          play: resumePlaying && !_routeCovered,
+          play: false,
         );
         if (!mounted || _disposing || revision != _openRevision) return;
-        if (_routeCovered) await _controller.pause();
         await _controller.setRate(_speed);
+        if (!mounted || _disposing || revision != _openRevision) return;
+        if (_canPlay &&
+            (_resumeOnReturn ||
+                (resumePlaying && visibilityRevision == _visibilityRevision))) {
+          await _playIfCurrent();
+        }
         if (!mounted || _disposing || revision != _openRevision) return;
         setState(() => _ready = true);
         _fullscreenRevision.value++;
