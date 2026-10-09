@@ -1,3 +1,4 @@
+import 'package:pronhub/config/page_selectors.dart';
 import 'dart:isolate';
 
 import 'package:pronhub/models/video_item.dart';
@@ -22,14 +23,17 @@ abstract final class Api {
   }
 
   static Future<VideoDetail> videoDetail(Uri uri) async {
-    final html = await WebViewLoader.instance.load(uri, selector: 'body');
+    final html = await WebViewLoader.instance.load(
+      uri,
+      selectors: PageSelectors.detailBody,
+    );
     return Isolate.run(() => VideoDetail.fromHtml(html, uri));
   }
 
   static Future<List<CategorySection>> categories(Uri uri) async {
     final html = await WebViewLoader.instance.load(
       uri,
-      selector: '.categoriesPage',
+      selectors: PageSelectors.categoryPage,
     );
     final sections = await Isolate.run(
       () => CategorySection.listFromHtml(html, uri),

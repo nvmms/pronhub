@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:pronhub/pages/home_page.dart';
 import 'package:pronhub/services/orientation_policy.dart';
 import 'package:pronhub/services/playback_route_observer.dart';
+import 'package:pronhub/services/webview_loader.dart';
+import 'package:webview_all/webview_all.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -16,7 +18,31 @@ class App extends StatelessWidget {
       navigatorObservers: [_orientationPolicy, playbackRouteObserver],
       builder: (context, child) {
         _orientationPolicy.update(context);
-        return child!;
+        return Stack(
+          children: [
+            child!,
+            // Positioned(
+            //   right: 0,
+            //   top: 0,
+            //   child: ValueListenableBuilder<WebViewController?>(
+            //     valueListenable: WebViewLoader.instance.controllerNotifier,
+            //     builder: (context, controller, child) {
+            //       if (controller == null) {
+            //         return const SizedBox.shrink();
+            //       }
+
+            //       return SizedBox(
+            //         // width: 1280,
+            //         // height: 720,
+            //         width: 192,
+            //         height: 108,
+            //         child: WebViewWidget(controller: controller),
+            //       );
+            //     },
+            //   ),
+            // ),
+          ],
+        );
       },
       themeMode: ThemeMode.system,
       theme: _theme(Brightness.light),

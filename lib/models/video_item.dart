@@ -1,3 +1,4 @@
+import 'package:pronhub/config/page_selectors.dart';
 import 'package:html/dom.dart';
 import 'package:html/parser.dart' as html_parser;
 
@@ -45,19 +46,18 @@ class VideoItem {
   static List<VideoItem> listFromHtml(String html, Uri baseUri) {
     final fragment = html_parser.parseFragment(html);
     return [
-      for (final element in fragment.querySelectorAll(
-        'li.pcVideoListItem[data-video-id]',
-      ))
-        ?fromElement(element, baseUri),
+      for (final element in fragment.selectAll(PageSelectors.videoItem))
+        if (element.attributes.containsKey('data-video-id'))
+          ?fromElement(element, baseUri),
     ];
   }
 
   static VideoItem? fromElement(Element element, Uri baseUri) {
-    final link = element.querySelector('.title a[href*="/view_video.php"]');
+    final link = element.selectFirst(PageSelectors.videoLink);
     final href = link?.attributes['href'];
     if (href == null || href.isEmpty) return null;
 
-    final image = element.querySelector('img.js-videoThumb');
+    final image = element.selectFirst(PageSelectors.videoThumbnail);
     final imageUrl = image?.attributes['src']?.trim();
     final title = _text(link?.text ?? '');
     if (title.isEmpty) return null;
@@ -70,17 +70,16 @@ class VideoItem {
           ? null
           : baseUri.resolve(imageUrl),
       duration: _text(
-        element.querySelector('.marker-overlays .duration')?.text ?? '',
+        element.selectFirst(PageSelectors.videoDuration)?.text ?? '',
       ),
       views: _text(
-        element.querySelector('.videoDetailBlock .views')?.text ??
-            element.querySelector('.views')?.text ??
-            element.querySelector('.videoViews')?.text ??
-            element.querySelector('.video-views')?.text ??
+        element.selectFirst(PageSelectors.videoViews)?.text ??
             element.attributes['data-views'] ??
             '',
       ),
-      uploader: _text(element.querySelector('.usernameWrap a')?.text ?? ''),
+      uploader: _text(
+        element.selectFirst(PageSelectors.videoUploader)?.text ?? '',
+      ),
     );
   }
 

@@ -1,3 +1,4 @@
+import 'package:pronhub/config/page_selectors.dart';
 import 'package:html/parser.dart' as html_parser;
 
 class CategoryItem {
@@ -56,28 +57,30 @@ class CategorySection {
   static List<CategorySection> listFromHtml(String html, Uri baseUri) {
     final root = html_parser.parseFragment(html);
     return [
-      for (final section in root.querySelectorAll('.categoriesPage .nf-videos'))
+      for (final section in root.selectAll(PageSelectors.categorySections))
         CategorySection(
           title:
               section
-                  .querySelector('.categoriesTitle h1, .categoriesTitle h2')
+                  .selectFirst(PageSelectors.categorySectionTitle)
                   ?.text
                   .replaceAll(RegExp(r'\s+'), ' ')
                   .trim() ??
               '分类',
           items: [
-            for (final card in section.querySelectorAll(
-              '.categoriesListSection > li.catPic',
-            ))
-              if (card.querySelector('.categoryTitleWrapper a[href]')
-                  case final link?)
+            for (final card in section.selectAll(PageSelectors.categoryCards))
+              if (card.selectFirst(PageSelectors.categoryLink) case final link?)
                 if ((link.attributes['href'] ?? '').isNotEmpty)
                   CategoryItem(
-                    name: link.querySelector('strong')?.text.trim() ?? '',
+                    name:
+                        link
+                            .selectFirst(PageSelectors.categoryName)
+                            ?.text
+                            .trim() ??
+                        '',
                     url: baseUri.resolve(link.attributes['href']!),
                     path: link.attributes['href']!,
                     image: switch (card
-                        .querySelector('.relativeWrapper img')
+                        .selectFirst(PageSelectors.categoryImage)
                         ?.attributes['src']) {
                       final String src when src.isNotEmpty => baseUri.resolve(
                         src,
@@ -85,7 +88,10 @@ class CategorySection {
                       _ => null,
                     },
                     count:
-                        card.querySelector('.videoCount var')?.text.trim() ??
+                        card
+                            .selectFirst(PageSelectors.categoryCount)
+                            ?.text
+                            .trim() ??
                         '',
                   ),
           ],

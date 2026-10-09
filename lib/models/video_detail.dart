@@ -1,3 +1,4 @@
+import 'package:pronhub/config/page_selectors.dart';
 import 'package:html/parser.dart' as parser;
 import 'package:pronhub/models/video_item.dart';
 import 'package:pronhub/models/video_source.dart';
@@ -75,54 +76,50 @@ class VideoDetail {
   static VideoDetail fromHtml(String html, Uri baseUri) {
     final document = parser.parse(html);
     final languageHref = document
-        .querySelector('.video-detailed-info .langSpokenWrapper a.item')
+        .selectFirst(PageSelectors.detailLanguage)
         ?.attributes['href'];
     final languageSegments = languageHref == null
         ? <String>[]
         : baseUri.resolve(languageHref).pathSegments;
     final languageIndex = languageSegments.indexOf('language');
-    String text(String selector) =>
-        _clean(document.querySelector(selector)?.text ?? '');
-    List<String> texts(String selector) => document
-        .querySelectorAll(selector)
+    String text(List<String> selector) =>
+        _clean(document.selectFirst(selector)?.text ?? '');
+    List<String> texts(List<String> selector) => document
+        .selectAll(selector)
         .map((element) => _clean(element.text))
         .where((value) => value.isNotEmpty)
         .toList();
     final avatarSrc = document
-        .querySelector('.video-detailed-info .userAvatar img')
+        .selectFirst(PageSelectors.detailAvatar)
         ?.attributes['src'];
     final userStats = document
-        .querySelectorAll('.video-detailed-info .userInfo > span')
+        .selectAll(PageSelectors.detailUserStats)
         .map((element) => _clean(element.text))
         .where((value) => value.isNotEmpty)
         .toList();
     final related = document
-        .querySelectorAll('#relatedVideosListing li.pcVideoListItem')
+        .selectAll(PageSelectors.relatedVideos)
         .map((element) => VideoItem.fromElement(element, baseUri))
         .whereType<VideoItem>()
         .toList();
-    final title = text('h1.title').isNotEmpty
-        ? text('h1.title')
-        : text('.videoTitle').isNotEmpty
-        ? text('.videoTitle')
-        : text('meta[property="og:title"]');
+    final title = text(PageSelectors.detailTitle);
     final metaTitle =
         document
-            .querySelector('meta[property="og:title"]')
+            .selectFirst(PageSelectors.detailMetaTitle)
             ?.attributes['content'] ??
         '';
     return VideoDetail(
       title: title.isNotEmpty ? title : _clean(metaTitle),
-      author: text('.video-detailed-info .usernameWrap a'),
+      author: text(PageSelectors.detailAuthor),
       avatar: avatarSrc == null || avatarSrc.isEmpty
           ? null
           : baseUri.resolve(avatarSrc),
       videoCount: userStats.isNotEmpty ? userStats.first : '',
       subscribers: userStats.length > 1 ? userStats[1] : '',
-      categories: texts('.video-detailed-info .categoriesWrapper a.item'),
+      categories: texts(PageSelectors.detailCategories),
       categoryPaths: {
-        for (final link in document.querySelectorAll(
-          '.video-detailed-info .categoriesWrapper a.item[href]',
+        for (final link in document.selectAll(
+          PageSelectors.detailCategoryLinks,
         ))
           if (_clean(link.text).isNotEmpty &&
               (link.attributes['href'] ?? '').isNotEmpty)
@@ -130,18 +127,16 @@ class VideoDetail {
                 .resolve(link.attributes['href']!)
                 .toString(),
       },
-      tags: texts('.video-detailed-info .tagsWrapper a.item'),
+      tags: texts(PageSelectors.detailTags),
       tagPaths: {
-        for (final link in document.querySelectorAll(
-          '.video-detailed-info .tagsWrapper a.item[href]',
-        ))
+        for (final link in document.selectAll(PageSelectors.detailTagLinks))
           if (_clean(link.text).isNotEmpty &&
               (link.attributes['href'] ?? '').isNotEmpty)
             _clean(link.text): baseUri
                 .resolve(link.attributes['href']!)
                 .toString(),
       },
-      language: text('.video-detailed-info .langSpokenWrapper a.item'),
+      language: text(PageSelectors.detailLanguage),
       languageCode:
           languageIndex >= 0 && languageIndex + 1 < languageSegments.length
           ? languageSegments[languageIndex + 1]

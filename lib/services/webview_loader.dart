@@ -1,6 +1,8 @@
+import 'package:pronhub/config/page_selectors.dart';
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:webview_all/webview_all.dart';
 
 /// Serializes page loads through one JavaScript-enabled
@@ -19,12 +21,13 @@ class WebViewLoader {
 
   OffscreenWebViewSession? _session;
   WebViewController? _controller;
+  WebViewController? get controller => _controller;
+  final controllerNotifier = ValueNotifier<WebViewController?>(null);
 
   Future<void>? _initializing;
   Future<void> _queue = Future<void>.value();
 
   _LoadTask? _active;
-  Completer<void>? _blankPageFinished;
 
   Future<void> _ensureInitialized() {
     return _initializing ??= _initialize().catchError((
@@ -54,6 +57,7 @@ class WebViewLoader {
 
       _controller = controller;
       _session = session;
+      controllerNotifier.value = controller;
     } catch (_) {
       await session.close();
       rethrow;
@@ -62,10 +66,11 @@ class WebViewLoader {
 
   Future<String> load(
     Uri uri, {
-    String selector = 'ul#videoCategory',
+    List<String> selectors = PageSelectors.videoList,
     Duration timeout = const Duration(seconds: 30),
   }) {
-    final result = _queue.then((_) => _load(uri, selector, timeout));
+    final candidates = List<String>.of(selectors);
+    final result = _queue.then((_) => _load(uri, candidates, timeout));
 
     _queue = result.then<void>(
       (_) {},
@@ -75,11 +80,15 @@ class WebViewLoader {
     return result;
   }
 
-  Future<String> _load(Uri uri, String selector, Duration timeout) async {
+  Future<String> _load(
+    Uri uri,
+    List<String> selectors,
+    Duration timeout,
+  ) async {
     await _ensureInitialized();
 
     final controller = _controller!;
-    final task = _LoadTask(uri, selector);
+    final task = _LoadTask(uri, selectors);
     _active = task;
 
     try {
@@ -87,39 +96,26 @@ class WebViewLoader {
 
       return await task.result.future.timeout(timeout);
     } on TimeoutException {
+      if (task.extracting) {
+        throw FormatException(
+          '页面已加载，但未能完成内容提取（目标元素：${selectors.join(", ")}）：$uri',
+        );
+      }
+
       try {
         await controller.runJavaScript('window.stop()');
       } catch (_) {}
 
-      throw TimeoutException('首页加载超时：$uri', timeout);
+      throw TimeoutException('页面加载超时：$uri', timeout);
     } finally {
       if (identical(_active, task)) {
         _active = null;
-      }
-
-      // Unload video resources to release the decoder.
-      final blankPageFinished = Completer<void>();
-      _blankPageFinished = blankPageFinished;
-
-      try {
-        await controller.loadRequest(Uri.parse('about:blank'));
-
-        await blankPageFinished.future.timeout(const Duration(seconds: 3));
-      } catch (_) {}
-
-      if (identical(_blankPageFinished, blankPageFinished)) {
-        _blankPageFinished = null;
       }
     }
   }
 
   Future<void> _onPageFinished(String url) async {
     if (url == 'about:blank') {
-      final completer = _blankPageFinished;
-
-      if (completer != null && !completer.isCompleted) {
-        completer.complete();
-      }
       return;
     }
 
@@ -144,30 +140,33 @@ class WebViewLoader {
       final controller = _controller!;
       final deadline = DateTime.now().add(const Duration(seconds: 15));
 
-      final targetSelector = task.selector == 'ul#videoCategory'
-          ? 'ul#videoCategory li.pcVideoListItem'
-          : task.selector;
+      // 视频列表需要至少有一个 item；其他页面只需容器存在。
+      final isVideoList = listEquals(task.selectors, PageSelectors.videoList);
+      final findContainerScript =
+          "(() => {"
+          "const selectors = ${jsonEncode(task.selectors)};"
+          "const items = ${jsonEncode(PageSelectors.videoItem)};"
+          "for (const selector of selectors) {"
+          "const container = document.querySelector(selector);"
+          "if (!container) continue;"
+          "if (${isVideoList ? 'true' : 'false'} && "
+          "!items.some(item => container.querySelector(item))) continue;"
+          "return container;"
+          "} return null; })()";
 
       while (DateTime.now().isBefore(deadline)) {
         if (!identical(_active, task) || task.result.isCompleted) {
           return;
         }
 
-        final found = await controller.runJavaScriptReturningResult(
-          "document.querySelector("
-          "${jsonEncode(targetSelector)}) "
-          "? 'ready' : 'waiting'",
+        final html = await controller.runJavaScriptReturningResult(
+          "($findContainerScript)?.outerHTML ?? ''",
         );
+        final decodedHtml = _decode(html);
 
-        if (_decode(found) == 'ready') {
-          final html = await controller.runJavaScriptReturningResult(
-            "document.querySelector("
-            "${jsonEncode(task.selector)})"
-            "?.outerHTML ?? ''",
-          );
-
+        if (decodedHtml.isNotEmpty) {
           if (!task.result.isCompleted) {
-            task.result.complete(_decode(html));
+            task.result.complete(decodedHtml);
           }
           return;
         }
@@ -175,7 +174,10 @@ class WebViewLoader {
         await Future<void>.delayed(const Duration(milliseconds: 200));
       }
 
-      throw TimeoutException('等待 PC 端视频列表超时');
+      throw FormatException(
+        '页面已加载，但未找到目标内容：${task.selectors.join(", ")}'
+        '${isVideoList ? "（视频项：${PageSelectors.videoItem.join(", ")}）" : ""}（$url）',
+      );
     } catch (error, stack) {
       if (!task.result.isCompleted) {
         task.result.completeError(error, stack);
@@ -224,6 +226,7 @@ class WebViewLoader {
     final session = _session;
     _session = null;
     _controller = null;
+    controllerNotifier.value = null;
     _initializing = null;
 
     if (session != null) {
@@ -233,10 +236,10 @@ class WebViewLoader {
 }
 
 class _LoadTask {
-  _LoadTask(this.uri, this.selector);
+  _LoadTask(this.uri, this.selectors);
 
   final Uri uri;
-  final String selector;
+  final List<String> selectors;
   final result = Completer<String>();
 
   bool extracting = false;
