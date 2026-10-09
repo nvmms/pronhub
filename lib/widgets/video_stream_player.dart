@@ -132,7 +132,6 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> with RouteAware {
   VideoSource? _selected;
   Object? _error;
   late List<VideoSource> _sources;
-  Timer? _recoveryTimer;
   bool _recoveryAttempted = false;
   bool _refreshingSources = false;
   Duration _lastPosition = Duration.zero;
@@ -382,7 +381,6 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> with RouteAware {
         if (!mounted || _disposing) return;
         if (position > _lastPosition && !_refreshingSources) {
           _error = null;
-          _recoveryTimer?.cancel();
         }
         _lastPosition = position;
         update(position);
@@ -414,25 +412,21 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> with RouteAware {
   }
 
   void _handleError(Object error) {
-    setState(() => _error = error);
-    _fullscreenRevision.value++;
-    if (widget.refreshSources != null &&
-        !_recoveryAttempted &&
-        !_refreshingSources) {
+    // Native players may report a generic failure before the HTTP status,
+    // or emit several errors for the same failed media load.
+    if (_refreshingSources) return;
+    if (widget.refreshSources != null && !_recoveryAttempted) {
       _recoveryAttempted = true;
-      final expired = RegExp(r'\b(?:401|410)\b').hasMatch(error.toString());
-      _recoveryTimer = Timer(
-        expired ? Duration.zero : const Duration(seconds: 1),
-        () {
-          if (mounted && !_disposing) unawaited(_retry(automatic: true));
-        },
-      );
+      unawaited(_retry(automatic: true));
+      return;
     }
+    final expired = RegExp(r'\b410\b').hasMatch(error.toString());
+    setState(() => _error = expired ? StateError('播放地址已失效，请重试获取新的地址') : error);
+    _fullscreenRevision.value++;
   }
 
   Future<void> _retry({bool automatic = false}) async {
     if (_refreshingSources || _disposing) return;
-    _recoveryTimer?.cancel();
     final refresh = widget.refreshSources;
     if (refresh == null) return _open(_selected!);
     final revision = _openRevision;
@@ -471,7 +465,6 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> with RouteAware {
     bool resetRecovery = true,
     bool forcePlay = false,
   }) {
-    _recoveryTimer?.cancel();
     if (resetRecovery) _recoveryAttempted = false;
     final revision = ++_openRevision;
     final visibilityRevision = _visibilityRevision;
@@ -521,7 +514,12 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> with RouteAware {
       } catch (error) {
         debugPrint('VideoStreamPlayer: $error');
         if (mounted && !_disposing && revision == _openRevision) {
-          _handleError(error);
+          if (_refreshingSources) {
+            setState(() => _error = error);
+            _fullscreenRevision.value++;
+          } else {
+            _handleError(error);
+          }
         }
       }
     });
@@ -531,7 +529,6 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> with RouteAware {
   void dispose() {
     playbackRouteObserver.unsubscribe(this);
     _disposing = true;
-    _recoveryTimer?.cancel();
     _controlsTimer?.cancel();
     _adjustmentTimer?.cancel();
     final history = _fullscreenHistory;

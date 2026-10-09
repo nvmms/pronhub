@@ -2,6 +2,7 @@ import 'package:pronhub/config/page_selectors.dart';
 import 'dart:isolate';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 import 'package:pronhub/models/video_item.dart';
 import 'package:pronhub/models/category_item.dart';
@@ -9,6 +10,11 @@ import 'package:pronhub/models/video_detail.dart';
 import 'package:pronhub/models/video_source.dart';
 import 'package:pronhub/services/webview_loader.dart';
 import 'package:webview_all/webview_all.dart';
+
+/// Preserve browser cookie values, including JSON strings containing quotes.
+@visibleForTesting
+String browserCookieHeader(Iterable<WebViewCookie> cookies) =>
+    cookies.map((cookie) => '${cookie.name}=${cookie.value}').join('; ');
 
 abstract final class Api {
   static final homeUri = Uri.parse('https://cn.pornhub.com/');
@@ -55,6 +61,7 @@ abstract final class Api {
     try {
       Object? lastError;
       for (final resolver in resolvers) {
+        debugPrint('[备用播放地址] GET $resolver');
         try {
           final cookies = await WebViewCookieManager().getCookies(
             domain: resolver,
@@ -63,19 +70,24 @@ abstract final class Api {
               .getUrl(resolver)
               .timeout(const Duration(seconds: 15));
           request.headers.set(HttpHeaders.refererHeader, pageUri.toString());
-          for (final cookie in cookies) {
-            request.cookies.add(Cookie(cookie.name, cookie.value));
+          if (cookies.isNotEmpty) {
+            request.headers.set(
+              HttpHeaders.cookieHeader,
+              browserCookieHeader(cookies),
+            );
           }
           final response = await request.close().timeout(
             const Duration(seconds: 15),
           );
-          if (response.statusCode != HttpStatus.ok) {
-            throw HttpException('播放地址接口 HTTP ${response.statusCode}');
-          }
+          debugPrint('[备用播放地址] HTTP ${response.statusCode}');
           final body = await utf8.decoder
               .bind(response)
               .join()
               .timeout(const Duration(seconds: 15));
+          debugPrint('[备用播放地址] 响应：\n$body');
+          if (response.statusCode != HttpStatus.ok) {
+            throw HttpException('播放地址接口 HTTP ${response.statusCode}');
+          }
           final definitions = jsonDecode(body);
           if (definitions is! List) {
             throw const FormatException('播放地址接口返回的不是列表');
@@ -87,6 +99,7 @@ abstract final class Api {
           if (sources.isEmpty) throw const FormatException('播放地址接口没有返回可用地址');
           return sources;
         } catch (error) {
+          debugPrint('[备用播放地址] 请求失败：$resolver\n$error');
           lastError = error;
         }
       }

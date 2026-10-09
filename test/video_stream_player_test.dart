@@ -280,61 +280,72 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('failed open refreshes once and resumed progress clears errors', (
-    tester,
-  ) async {
-    final platform = _PlayerPlatform();
-    var refreshes = 0;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: VideoStreamPlayer(
-            playerFactory: () => Player(platformPlayer: platform),
-            videoSurface: const SizedBox(),
-            sources: [
-              VideoSource(
-                url: Uri.parse('https://example.com/old.m3u8'),
-                quality: '720p',
-              ),
-            ],
-            pageUrl: Uri.parse('https://example.com/video'),
-            refreshSources: () async {
-              refreshes++;
-              return [
+  testWidgets(
+    '410 refreshes silently once and resumed progress clears errors',
+    (tester) async {
+      final platform = _PlayerPlatform();
+      var refreshes = 0;
+      final freshSources = Completer<List<VideoSource>>();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: VideoStreamPlayer(
+              playerFactory: () => Player(platformPlayer: platform),
+              videoSurface: const SizedBox(),
+              sources: [
                 VideoSource(
-                  url: Uri.parse('https://example.com/fresh.m3u8'),
+                  url: Uri.parse('https://example.com/old.m3u8'),
                   quality: '720p',
                 ),
-              ];
-            },
+              ],
+              pageUrl: Uri.parse('https://example.com/video'),
+              refreshSources: () async {
+                refreshes++;
+                return freshSources.future;
+              },
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump();
-    await platform.pause();
-    platform.emitError('HTTP error 401 Unauthorized');
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 1));
-    await tester.pump();
-    await tester.pump();
-    expect(refreshes, 1);
-    expect(platform.media!.uri, 'https://example.com/fresh.m3u8');
-    expect(platform.state.playing, isTrue);
-    platform.emitError('Failed to open fresh.m3u8');
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
-    expect(refreshes, 1);
-    expect(find.text('Failed to open fresh.m3u8'), findsOneWidget);
-    expect(find.byTooltip('返回'), findsOneWidget);
-    await platform.seek(const Duration(seconds: 1));
-    await tester.pump();
-    await tester.pump();
-    expect(find.text('Failed to open fresh.m3u8'), findsNothing);
-    await tester.pumpWidget(const SizedBox());
-    await tester.pump();
-  });
+      );
+      await tester.pump();
+      await tester.pump();
+      await platform.pause();
+      platform.emitError('Failed to open media');
+      await tester.pump();
+      expect(refreshes, 1);
+      expect(find.text('Failed to open media'), findsNothing);
+      expect(find.text('HTTP error 410 Gone'), findsNothing);
+      platform.emitError('HTTP error 410 Gone');
+      platform.emitError('Failed to open media');
+      await tester.pump();
+      expect(refreshes, 1);
+      expect(find.text('HTTP error 410 Gone'), findsNothing);
+      expect(find.text('Failed to open media'), findsNothing);
+      freshSources.complete([
+        VideoSource(
+          url: Uri.parse('https://example.com/fresh.m3u8'),
+          quality: '720p',
+        ),
+      ]);
+      await tester.pump();
+      await tester.pump();
+      expect(refreshes, 1);
+      expect(platform.media!.uri, 'https://example.com/fresh.m3u8');
+      expect(platform.state.playing, isTrue);
+      platform.emitError('Failed to open fresh.m3u8');
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 2));
+      expect(refreshes, 1);
+      expect(find.text('Failed to open fresh.m3u8'), findsOneWidget);
+      expect(find.byTooltip('返回'), findsOneWidget);
+      await platform.seek(const Duration(seconds: 1));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Failed to open fresh.m3u8'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    },
+  );
 
   test('Windows video proxy honors HTTPS configuration and bypasses', () {
     final environment = {
