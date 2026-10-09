@@ -313,13 +313,15 @@ void main() {
     );
     await tester.pump();
     await tester.pump();
-    platform.emitError('Failed to open old.m3u8');
+    await platform.pause();
+    platform.emitError('HTTP error 401 Unauthorized');
     await tester.pump();
-    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 1));
     await tester.pump();
     await tester.pump();
     expect(refreshes, 1);
     expect(platform.media!.uri, 'https://example.com/fresh.m3u8');
+    expect(platform.state.playing, isTrue);
     platform.emitError('Failed to open fresh.m3u8');
     await tester.pump();
     await tester.pump(const Duration(seconds: 2));

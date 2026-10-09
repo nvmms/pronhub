@@ -114,6 +114,44 @@ class WebViewLoader {
     }
   }
 
+  /// Reads the existing DOM without navigating or refreshing the WebView.
+  Future<String> readCurrentPage(
+    Uri expectedUri, {
+    List<String> selectors = PageSelectors.detailBody,
+  }) {
+    final candidates = List<String>.of(selectors);
+    final result = _queue.then((_) async {
+      final controller = _controller;
+      if (controller == null) throw StateError('WebView 尚未加载页面');
+      final snapshot = await controller.runJavaScriptReturningResult(
+        "JSON.stringify({url: location.href, html: (() => {"
+        "for (const selector of ${jsonEncode(candidates)}) {"
+        "const element = document.querySelector(selector);"
+        "if (element) return element.outerHTML;"
+        "} return ''; })()})",
+      );
+      final page = jsonDecode(_decode(snapshot)) as Map<String, dynamic>;
+      final currentUri = Uri.parse(page['url'] as String);
+      final expectedKey = expectedUri.queryParameters['viewkey'];
+      if (currentUri.host != expectedUri.host ||
+          currentUri.path != expectedUri.path ||
+          (expectedKey != null &&
+              currentUri.queryParameters['viewkey'] != expectedKey)) {
+        throw StateError('WebView 当前页面不是此视频页面：$currentUri');
+      }
+      final html = page['html'] as String;
+      if (html.isEmpty) {
+        throw FormatException('当前页面未找到目标元素：${candidates.join(", ")}');
+      }
+      return html;
+    });
+    _queue = result.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stack) {},
+    );
+    return result;
+  }
+
   Future<void> _onPageFinished(String url) async {
     if (url == 'about:blank') {
       return;
@@ -224,9 +262,9 @@ class WebViewLoader {
     }
 
     final session = _session;
+    controllerNotifier.value = null;
     _session = null;
     _controller = null;
-    controllerNotifier.value = null;
     _initializing = null;
 
     if (session != null) {

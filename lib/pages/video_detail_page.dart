@@ -193,11 +193,7 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
               sources: detail.sources,
               pageUrl: widget.video.url,
               title: detail.title.isEmpty ? widget.video.title : detail.title,
-              refreshSources: () async {
-                final fresh = await Api.videoDetail(widget.video.url);
-                await DataCache.saveVideoDetail(widget.video.url, fresh);
-                return fresh.sources;
-              },
+              refreshSources: () => Api.refreshVideoSources(widget.video.url),
             ),
     ),
   );

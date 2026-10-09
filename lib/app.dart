@@ -15,12 +15,22 @@ class App extends StatefulWidget {
 
 class _AppState extends State<App> {
   static final _orientationPolicy = OrientationPolicy.instance;
+  static const _windowChannel = MethodChannel('pronhub/window');
   bool _webViewInFront = false;
 
   @override
   void initState() {
     super.initState();
     HardwareKeyboard.instance.addHandler(_handleKeyEvent);
+    _windowChannel.setMethodCallHandler((call) async {
+      if (call.method == 'toggleWebView' && mounted) {
+        _toggleWebView();
+      }
+    });
+  }
+
+  void _toggleWebView() {
+    setState(() => _webViewInFront = !_webViewInFront);
   }
 
   bool _handleKeyEvent(KeyEvent event) {
@@ -29,7 +39,7 @@ class _AppState extends State<App> {
       return false;
     }
     if (event is KeyDownEvent) {
-      setState(() => _webViewInFront = !_webViewInFront);
+      _toggleWebView();
     }
     return true;
   }
@@ -37,6 +47,7 @@ class _AppState extends State<App> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
+    _windowChannel.setMethodCallHandler(null);
     super.dispose();
   }
 

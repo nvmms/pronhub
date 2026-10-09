@@ -420,9 +420,13 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> with RouteAware {
         !_recoveryAttempted &&
         !_refreshingSources) {
       _recoveryAttempted = true;
-      _recoveryTimer = Timer(const Duration(seconds: 1), () {
-        if (mounted && !_disposing) unawaited(_retry(automatic: true));
-      });
+      final expired = RegExp(r'\b(?:401|410)\b').hasMatch(error.toString());
+      _recoveryTimer = Timer(
+        expired ? Duration.zero : const Duration(seconds: 1),
+        () {
+          if (mounted && !_disposing) unawaited(_retry(automatic: true));
+        },
+      );
     }
   }
 
@@ -447,6 +451,7 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> with RouteAware {
       await _open(
         source.isEmpty ? _preferredSource() : source.first,
         resetRecovery: !automatic,
+        forcePlay: automatic,
       );
     } catch (error) {
       if (mounted && !_disposing && revision == _openRevision) {
@@ -461,12 +466,17 @@ class VideoStreamPlayerState extends State<VideoStreamPlayer> with RouteAware {
     }
   }
 
-  Future<void> _open(VideoSource source, {bool resetRecovery = true}) {
+  Future<void> _open(
+    VideoSource source, {
+    bool resetRecovery = true,
+    bool forcePlay = false,
+  }) {
     _recoveryTimer?.cancel();
     if (resetRecovery) _recoveryAttempted = false;
     final revision = ++_openRevision;
     final visibilityRevision = _visibilityRevision;
-    final resumePlaying = _canPlay && (!_ready || _controller.state.playing);
+    final resumePlaying =
+        _canPlay && (forcePlay || !_ready || _controller.state.playing);
     if (!_canPlay && !_ready) _resumeOnReturn = true;
     final resumePosition = _ready ? _controller.state.position : Duration.zero;
     _lastPosition = resumePosition;

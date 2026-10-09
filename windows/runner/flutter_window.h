@@ -32,6 +32,8 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> window_channel_;
   bool fullscreen_ = false;
+  static constexpr int kWebViewHotKeyId = 1;
+  bool webview_hotkey_registered_ = false;
   LONG_PTR window_style_ = 0;
   WINDOWPLACEMENT window_placement_ = {sizeof(WINDOWPLACEMENT)};
 };

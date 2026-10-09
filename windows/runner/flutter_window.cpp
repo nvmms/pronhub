@@ -79,6 +79,10 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  if (webview_hotkey_registered_) {
+    UnregisterHotKey(GetHandle(), kWebViewHotKeyId);
+    webview_hotkey_registered_ = false;
+  }
   window_channel_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
@@ -91,6 +95,29 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // WebView2 owns keyboard focus in a native child window. Receive Ctrl+R
+  // before it becomes a browser refresh, only while our window is active.
+  if (message == WM_ACTIVATE) {
+    if (LOWORD(wparam) == WA_INACTIVE) {
+      if (webview_hotkey_registered_) {
+        UnregisterHotKey(hwnd, kWebViewHotKeyId);
+        webview_hotkey_registered_ = false;
+      }
+    } else if (!webview_hotkey_registered_) {
+      webview_hotkey_registered_ =
+          RegisterHotKey(hwnd, kWebViewHotKeyId, MOD_CONTROL | MOD_NOREPEAT, 'R') != 0;
+      if (!webview_hotkey_registered_) {
+        OutputDebugString(L"Pronhub: failed to register Ctrl+R hotkey.\n");
+      }
+    }
+  }
+  if (message == WM_HOTKEY && wparam == kWebViewHotKeyId) {
+    if (window_channel_ && GetForegroundWindow() == hwnd) {
+      window_channel_->InvokeMethod("toggleWebView", nullptr);
+    }
+    return 0;
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =

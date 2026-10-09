@@ -1,10 +1,14 @@
 import 'package:pronhub/config/page_selectors.dart';
 import 'dart:isolate';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:pronhub/models/video_item.dart';
 import 'package:pronhub/models/category_item.dart';
 import 'package:pronhub/models/video_detail.dart';
+import 'package:pronhub/models/video_source.dart';
 import 'package:pronhub/services/webview_loader.dart';
+import 'package:webview_all/webview_all.dart';
 
 abstract final class Api {
   static final homeUri = Uri.parse('https://cn.pornhub.com/');
@@ -28,6 +32,68 @@ abstract final class Api {
       selectors: PageSelectors.detailBody,
     );
     return Isolate.run(() => VideoDetail.fromHtml(html, uri));
+  }
+
+  static Future<VideoDetail> videoDetailFromCurrentPage(Uri uri) async {
+    final html = await WebViewLoader.instance.readCurrentPage(
+      uri,
+      selectors: PageSelectors.detailBody,
+    );
+    return Isolate.run(() => VideoDetail.fromHtml(html, uri));
+  }
+
+  /// Requests the signed resolver URL directly; does not reload the webpage.
+  static Future<List<VideoSource>> refreshVideoSources(Uri pageUri) async {
+    final html = await WebViewLoader.instance.readCurrentPage(pageUri);
+    final resolvers = VideoSource.remoteUrlsFromHtml(html, pageUri);
+    if (resolvers.isEmpty) {
+      throw StateError('当前页面没有远程播放地址接口');
+    }
+    final client = HttpClient()..userAgent = WebViewLoader.desktopUserAgent;
+    client.findProxy = (uri) => HttpClient.findProxyFromEnvironment(uri);
+    client.connectionTimeout = const Duration(seconds: 15);
+    try {
+      Object? lastError;
+      for (final resolver in resolvers) {
+        try {
+          final cookies = await WebViewCookieManager().getCookies(
+            domain: resolver,
+          );
+          final request = await client
+              .getUrl(resolver)
+              .timeout(const Duration(seconds: 15));
+          request.headers.set(HttpHeaders.refererHeader, pageUri.toString());
+          for (final cookie in cookies) {
+            request.cookies.add(Cookie(cookie.name, cookie.value));
+          }
+          final response = await request.close().timeout(
+            const Duration(seconds: 15),
+          );
+          if (response.statusCode != HttpStatus.ok) {
+            throw HttpException('播放地址接口 HTTP ${response.statusCode}');
+          }
+          final body = await utf8.decoder
+              .bind(response)
+              .join()
+              .timeout(const Duration(seconds: 15));
+          final definitions = jsonDecode(body);
+          if (definitions is! List) {
+            throw const FormatException('播放地址接口返回的不是列表');
+          }
+          final sources = VideoSource.fromDefinitions(
+            definitions,
+            includeMp4: true,
+          );
+          if (sources.isEmpty) throw const FormatException('播放地址接口没有返回可用地址');
+          return sources;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError ?? StateError('没有可用的播放地址接口');
+    } finally {
+      client.close(force: true);
+    }
   }
 
   static Future<List<CategorySection>> categories(Uri uri) async {
